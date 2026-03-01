@@ -9,7 +9,9 @@ import (
 	"diary-service/internal/config"
 	"diary-service/internal/db"
 	authHandler "diary-service/internal/handlers/auth"
+	catalogH "diary-service/internal/handlers/catalog"
 	notifyH "diary-service/internal/handlers/notification"
+	userH "diary-service/internal/handlers/user"
 	wsHandler "diary-service/internal/handlers/websocket"
 	"diary-service/internal/middleware"
 	"diary-service/internal/pkg/jwt"
@@ -17,7 +19,9 @@ import (
 	"diary-service/internal/repository/postgres"
 	"diary-service/internal/service/email"
 	authUsecase "diary-service/internal/service/auth"
+	catalogUsecase "diary-service/internal/service/catalog"
 	notifyUsecase "diary-service/internal/service/notification"
+	userUsecase "diary-service/internal/service/user"
 	"diary-service/internal/websocket"
 	wsHandlers "diary-service/internal/websocket/handler"
 
@@ -91,6 +95,15 @@ func (s *Server) Start() error {
 	authRepo := postgres.NewAuthRepository(pool)
 	notifyRepo := postgres.NewNotificationRepository(pool)
 
+	// Catalog and user repositories
+	categoryRepo := postgres.NewCategoryRepository(pool)
+	brandRepo := postgres.NewBrandRepository(pool)
+	tagRepo := postgres.NewTagRepository(pool)
+	productRepo := postgres.NewProductRepository(pool)
+	attributeRepo := postgres.NewAttributeRepository(pool)
+	variantRepo := postgres.NewVariantRepository(pool)
+	userAddressRepo := postgres.NewUserAddressRepository(pool)
+
 	// Update session manager with auth repo
 	sessionManager = session.NewManager(redisClient, authRepo)
 
@@ -118,10 +131,23 @@ func (s *Server) Start() error {
 
 	notifService := notifyUsecase.NewNotificationService(notifyRepo, hub)
 
+	catalogService := catalogUsecase.NewCatalogService(
+		categoryRepo,
+		brandRepo,
+		tagRepo,
+		productRepo,
+		attributeRepo,
+		variantRepo,
+	)
+
+	userService := userUsecase.NewUserService(userAddressRepo)
+
 	// ----- Handlers -----
 	authHandlerInst := authHandler.NewAuthHandler(authService, logger)
-	notifHandler := notifyH.NewNotificationHandler( notifService)
+	notifHandler := notifyH.NewNotificationHandler(notifService)
 	wsHandlerInst := wsHandler.NewWebSocketHandler(hub, logger)
+	catalogHandlerInst := catalogH.NewCatalogHandler(catalogService)
+	userHandlerInst := userH.NewUserHandler(userService)
 
 	// ----- Middlewares -----
 	authMiddleware := middleware.NewAuthMiddleware(authService)
@@ -137,6 +163,8 @@ func (s *Server) Start() error {
 		AuthHandler:    authHandlerInst,
 		NotifHandler:   notifHandler,
 		WSHandler:      wsHandlerInst,
+		CatalogHandler: catalogHandlerInst,
+		UserHandler:    userHandlerInst,
 		AuthMiddleware: authMiddleware,
 	}
 	SetupRouter(s.engine, logger, handlers)
