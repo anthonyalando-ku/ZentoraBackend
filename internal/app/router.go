@@ -3,7 +3,9 @@ package app
 
 import (
 	authHandler "diary-service/internal/handlers/auth"
+	catalogHandler "diary-service/internal/handlers/catalog"
 	notifyHandler "diary-service/internal/handlers/notification"
+	userHandler "diary-service/internal/handlers/user"
 	wsHandler "diary-service/internal/handlers/websocket"
 	"diary-service/internal/middleware"
 
@@ -15,6 +17,8 @@ type Handlers struct {
 	AuthHandler    *authHandler.AuthHandler
 	NotifHandler   *notifyHandler.NotificationHandler
 	WSHandler      *wsHandler.WebSocketHandler
+	CatalogHandler *catalogHandler.CatalogHandler
+	UserHandler    *userHandler.UserHandler
 	AuthMiddleware *middleware.AuthMiddleware
 }
 
@@ -78,10 +82,44 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 	}
 
 	// ==================== User Routes ====================
-	userRoutes := api.Group("/users")
+	userRoutes := api.Group("/me")
 	userRoutes.Use(h.AuthMiddleware.Auth())
 	{
-		// Add user-specific routes here
+		// Addresses
+		userRoutes.GET("/addresses", h.UserHandler.ListAddresses)
+		userRoutes.POST("/addresses", h.UserHandler.CreateAddress)
+		userRoutes.GET("/addresses/:id", h.UserHandler.GetAddress)
+		userRoutes.PUT("/addresses/:id", h.UserHandler.UpdateAddress)
+		userRoutes.DELETE("/addresses/:id", h.UserHandler.DeleteAddress)
+		userRoutes.PUT("/addresses/:id/default", h.UserHandler.SetDefaultAddress)
+	}
+
+	// ==================== Public Catalog Routes ====================
+	catalogPublic := api.Group("/catalog")
+	{
+		// Categories
+		catalogPublic.GET("/categories", h.CatalogHandler.ListCategories)
+		catalogPublic.GET("/categories/:id", h.CatalogHandler.GetCategory)
+		catalogPublic.GET("/categories/:id/descendants", h.CatalogHandler.GetCategoryDescendants)
+
+		// Brands
+		catalogPublic.GET("/brands", h.CatalogHandler.ListBrands)
+		catalogPublic.GET("/brands/:id", h.CatalogHandler.GetBrand)
+
+		// Products
+		catalogPublic.GET("/products", h.CatalogHandler.ListProducts)
+		catalogPublic.GET("/products/:id", h.CatalogHandler.GetProduct)
+		catalogPublic.GET("/products/:id/images", h.CatalogHandler.GetProductImages)
+		catalogPublic.GET("/products/:id/tags", h.CatalogHandler.GetProductTags)
+		catalogPublic.GET("/products/:id/categories", h.CatalogHandler.GetProductCategories)
+		catalogPublic.GET("/products/:id/variants", h.CatalogHandler.ListProductVariants)
+		catalogPublic.GET("/products/:id/attribute-values", h.CatalogHandler.GetProductAttributeValues)
+		catalogPublic.GET("/products/:id/variants/:variant_id/attribute-values", h.CatalogHandler.GetVariantAttributeValues)
+
+		// Attributes
+		catalogPublic.GET("/attributes", h.CatalogHandler.ListAttributes)
+		catalogPublic.GET("/attributes/:id", h.CatalogHandler.GetAttribute)
+		catalogPublic.GET("/attributes/:id/values", h.CatalogHandler.ListAttributeValues)
 	}
 
 	// ==================== Admin Routes (Super Admin Only) ====================
@@ -106,6 +144,54 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 	reports.Use(h.AuthMiddleware.WithPermission("reports.read")...) // Use spread operator
 	{
 		// Add report routes here
+	}
+
+	// ==================== Admin Catalog Management ====================
+	adminCatalog := api.Group("/admin/catalog")
+	adminCatalog.Use(h.AuthMiddleware.AdminOnly()...)
+	{
+		// Categories
+		adminCatalog.POST("/categories", h.CatalogHandler.CreateCategory)
+		adminCatalog.PUT("/categories/:id", h.CatalogHandler.UpdateCategory)
+		adminCatalog.DELETE("/categories/:id", h.CatalogHandler.DeleteCategory)
+
+		// Brands
+		adminCatalog.POST("/brands", h.CatalogHandler.CreateBrand)
+		adminCatalog.PUT("/brands/:id", h.CatalogHandler.UpdateBrand)
+		adminCatalog.DELETE("/brands/:id", h.CatalogHandler.DeleteBrand)
+
+		// Products
+		adminCatalog.POST("/products", h.CatalogHandler.CreateProduct)
+		adminCatalog.PUT("/products/:id", h.CatalogHandler.UpdateProduct)
+		adminCatalog.DELETE("/products/:id", h.CatalogHandler.DeleteProduct)
+
+		// Product tags
+		adminCatalog.PUT("/products/:id/tags", h.CatalogHandler.SetProductTags)
+
+		// Product categories
+		adminCatalog.POST("/products/:id/categories", h.CatalogHandler.AddProductCategory)
+		adminCatalog.DELETE("/products/:id/categories/:cat_id", h.CatalogHandler.RemoveProductCategory)
+
+		// Product images
+		adminCatalog.POST("/products/:id/images", h.CatalogHandler.AddProductImage)
+		adminCatalog.DELETE("/products/:id/images/:image_id", h.CatalogHandler.DeleteProductImage)
+		adminCatalog.PUT("/products/:id/images/:image_id/primary", h.CatalogHandler.SetPrimaryImage)
+
+		// Product attribute values
+		adminCatalog.PUT("/products/:id/attribute-values", h.CatalogHandler.SetProductAttributeValues)
+
+		// Product variants
+		adminCatalog.POST("/products/:id/variants", h.CatalogHandler.CreateVariant)
+		adminCatalog.PUT("/products/:id/variants/:variant_id", h.CatalogHandler.UpdateVariant)
+		adminCatalog.DELETE("/products/:id/variants/:variant_id", h.CatalogHandler.DeleteVariant)
+		adminCatalog.PUT("/products/:id/variants/:variant_id/attribute-values", h.CatalogHandler.SetVariantAttributeValues)
+
+		// Attributes
+		adminCatalog.POST("/attributes", h.CatalogHandler.CreateAttribute)
+		adminCatalog.PUT("/attributes/:id", h.CatalogHandler.UpdateAttribute)
+		adminCatalog.DELETE("/attributes/:id", h.CatalogHandler.DeleteAttribute)
+		adminCatalog.POST("/attributes/:id/values", h.CatalogHandler.AddAttributeValue)
+		adminCatalog.DELETE("/attributes/:id/values/:val_id", h.CatalogHandler.DeleteAttributeValue)
 	}
 
 	// Health check
