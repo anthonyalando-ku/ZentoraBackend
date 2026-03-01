@@ -91,6 +91,25 @@ func (s *Server) Start() error {
 	authRepo := postgres.NewAuthRepository(pool)
 	notifyRepo := postgres.NewNotificationRepository(pool)
 
+	// Catalog and user repositories – constructed here so they can be passed to
+	// future service/handler layers without additional wiring changes.
+	categoryRepo := postgres.NewCategoryRepository(pool)
+	brandRepo := postgres.NewBrandRepository(pool)
+	tagRepo := postgres.NewTagRepository(pool)
+	productRepo := postgres.NewProductRepository(pool)
+	attributeRepo := postgres.NewAttributeRepository(pool)
+	variantRepo := postgres.NewVariantRepository(pool)
+	userAddressRepo := postgres.NewUserAddressRepository(pool)
+
+	// Suppress unused-variable warnings until service layers are added.
+	_ = categoryRepo
+	_ = brandRepo
+	_ = tagRepo
+	_ = productRepo
+	_ = attributeRepo
+	_ = variantRepo
+	_ = userAddressRepo
+
 	// Update session manager with auth repo
 	sessionManager = session.NewManager(redisClient, authRepo)
 
