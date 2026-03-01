@@ -1,0 +1,72 @@
+You are a senior software architect and database engineer.
+
+I am building a production-grade e-commerce platform called "Zentora".
+
+Important context:
+- PostgreSQL database already exists: `zentora`
+- Authentication system is already completed
+- Users are stored in `auth_identities`
+- We are integrating with that table via foreign keys
+- This is NOT a tutorial/demo project
+- We are designing for scale (Jumia-level architecture)
+
+We will build this system step-by-step.
+
+STEP 1: Database Architecture (Current Focus)
+
+Right now we are focusing ONLY on designing a highly optimized, scalable, normalized database schema for the product and commerce domain.
+
+Requirements:
+- Products with variants
+- Category hierarchy
+- Brands
+- Attributes & filtering system
+- Tags
+- Product images
+- Discounts
+- Inventory
+- Cart system (guest + registered users)
+- Orders (fully normalized, no JSON product storage)
+- Order items
+- Payments
+- Shipping snapshot
+- Shipping methods
+- Order fulfillment / tracking
+- Reviews (verified purchase capable)
+- Wishlist (normalized)
+- Analytics events (views, purchases, cart events)
+- Metrics cache table (for trending and personalization)
+- Recommendation-ready structure
+- Homepage CMS (banners, sections)
+
+Constraints:
+- Avoid unnecessary JSONB for relational data
+- Ensure proper indexing strategy
+- Use BIGSERIAL where appropriate
+- Include foreign key constraints
+- Include performance indexes
+- Make it production-grade
+- Design for future microservice separation
+- Allow guest checkout (nullable user_id where needed)
+- Ensure historical order integrity (snapshotting where necessary)
+
+We are NOT yet discussing:
+- Microservices
+- APIs
+- Business logic
+- Caching layer
+- Search engine integration
+
+Focus only on database structure.
+
+I will now provide my current schema.
+Your task will be:
+- Review it
+- Suggest improvements
+- Refactor where necessary
+- Ensure normalization
+- Improve indexing
+- Identify scalability issues
+- Maintain compatibility with `auth_identities`
+
+This is my current schema

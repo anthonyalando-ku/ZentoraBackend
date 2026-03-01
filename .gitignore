@@ -1,0 +1,4 @@
+# Ignore uploads folder
+.env
+
+/secrets/
