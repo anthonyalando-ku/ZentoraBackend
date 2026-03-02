@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"diary-service/internal/domain/auth"
+	"zentora-service/internal/domain/auth"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -64,8 +64,8 @@ func (s *AuthService) SendEmailVerificationOTP(ctx context.Context, email string
 	// Store metadata for resend
 	metadataKey := fmt.Sprintf("email_otp_meta:%s:%s", email, token)
 	metadata := map[string]interface{}{
-		"email":      email,
-		"created_at": time.Now().Unix(),
+		"email":        email,
+		"created_at":   time.Now().Unix(),
 		"resend_count": 0,
 	}
 	metadataJSON, _ := json.Marshal(metadata)

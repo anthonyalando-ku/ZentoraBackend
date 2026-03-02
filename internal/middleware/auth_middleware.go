@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"diary-service/internal/pkg/response"
-	"diary-service/internal/service/auth"
+	"zentora-service/internal/pkg/response"
+	"zentora-service/internal/service/auth"
 
 	"github.com/gin-gonic/gin"
 )

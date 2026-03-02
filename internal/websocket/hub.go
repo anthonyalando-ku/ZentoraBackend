@@ -6,9 +6,9 @@ import (
 	"log"
 	"sync"
 
-	wstypes "diary-service/internal/domain/websocket"
-	"diary-service/internal/pkg/jwt"
-	"diary-service/internal/pkg/session"
+	wstypes "zentora-service/internal/domain/websocket"
+	"zentora-service/internal/pkg/jwt"
+	"zentora-service/internal/pkg/session"
 )
 
 type Hub struct {
@@ -127,7 +127,7 @@ func (h *Hub) registerClient(client *Client) {
 	}
 	h.clients[client.identityID][client] = true
 
-	log.Printf("Client connected: identity=%d, session=%s, total=%d", 
+	log.Printf("Client connected: identity=%d, session=%s, total=%d",
 		client.identityID, client.sessionID, h.totalClients())
 
 	// Send welcome message with user info
@@ -153,7 +153,7 @@ func (h *Hub) unregisterClient(client *Client) {
 				delete(h.clients, client.identityID)
 			}
 
-			log.Printf("Client disconnected: identity=%d, session=%s, total=%d", 
+			log.Printf("Client disconnected: identity=%d, session=%s, total=%d",
 				client.identityID, client.sessionID, h.totalClients())
 		}
 	}
@@ -186,7 +186,6 @@ func (h *Hub) BroadcastMessage(msg *BroadcastMessage) {
 	}
 }
 
-
 func (h *Hub) GetConnectedClients(identityID int64) int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -205,6 +204,7 @@ func (h *Hub) TotalClients() int {
 	}
 	return total
 }
+
 // Public methods for broadcasting
 
 func (h *Hub) BroadcastNotification(identityID int64, notification *wstypes.NotificationData) {
@@ -257,8 +257,6 @@ func (h *Hub) ForceLogout(identityID int64, sessionID string, reason string) {
 		Message:     msg,
 	}
 }
-
-
 
 // IsUserConnected checks if a user has any active connections
 func (h *Hub) IsUserConnected(identityID int64) bool {

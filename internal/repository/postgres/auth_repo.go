@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"diary-service/internal/domain/auth"
-	xerrors "diary-service/internal/pkg/errors"
+	"zentora-service/internal/domain/auth"
+	xerrors "zentora-service/internal/pkg/errors"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )

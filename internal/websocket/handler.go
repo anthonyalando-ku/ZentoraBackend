@@ -3,14 +3,14 @@ package websocket
 
 import (
 	"context"
-	wstypes "diary-service/internal/domain/websocket"
+	wstypes "zentora-service/internal/domain/websocket"
 )
 
 // MessageHandler interface that each module must implement
 type MessageHandler interface {
 	// HandleMessage processes messages for this handler's domain
 	HandleMessage(ctx context.Context, client *Client, msg *wstypes.WSMessage) error
-	
+
 	// SupportedEvents returns the list of event types this handler supports
 	SupportedEvents() []wstypes.EventType
 }

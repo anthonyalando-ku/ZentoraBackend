@@ -6,8 +6,8 @@ import (
 	"database/sql"
 	"fmt"
 
-	"diary-service/internal/domain/user"
-	xerrors "diary-service/internal/pkg/errors"
+	"zentora-service/internal/domain/user"
+	xerrors "zentora-service/internal/pkg/errors"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	wstypes "diary-service/internal/domain/websocket"
+	wstypes "zentora-service/internal/domain/websocket"
 
 	"github.com/gorilla/websocket"
 )
@@ -39,11 +39,11 @@ type Client struct {
 	permissions []string
 	device      string
 	email       string
-	
+
 	// Subscriptions - what channels this client is listening to
 	subscriptions map[wstypes.ChannelType]bool
 	subMutex      sync.RWMutex
-	
+
 	// Context for graceful shutdown
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -51,7 +51,7 @@ type Client struct {
 
 func NewClient(hub *Hub, conn *websocket.Conn, auth *ClientAuth) *Client {
 	ctx, cancel := context.WithCancel(context.Background())
-	
+
 	return &Client{
 		hub:           hub,
 		conn:          conn,

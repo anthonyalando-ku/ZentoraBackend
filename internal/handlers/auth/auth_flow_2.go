@@ -5,12 +5,13 @@ import (
 	"net/http"
 	//"strings"
 
-	"diary-service/internal/domain/auth"
-	"diary-service/internal/pkg/response"
+	"zentora-service/internal/domain/auth"
+	"zentora-service/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
+
 // SendEmailVerificationOTP sends OTP to email for verification
 func (h *AuthHandler) SendEmailVerificationOTP(c *gin.Context) {
 	// h.logger.Info("received request to send email verification OTP",

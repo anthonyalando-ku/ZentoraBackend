@@ -10,7 +10,7 @@ import (
 	//"strconv"
 	"time"
 
-	"diary-service/internal/repository/postgres"
+	"zentora-service/internal/repository/postgres"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -197,7 +197,7 @@ func (m *Manager) InvalidateAllUserSessions(ctx context.Context, identityID int6
 // RefreshSession extends the TTL of a session
 func (m *Manager) RefreshSession(ctx context.Context, identityID int64, jti string, newExpiry time.Time) error {
 	key := m.sessionKey(identityID, jti)
-	_ =  key
+	_ = key
 
 	// Get current session
 	session, err := m.GetSession(ctx, identityID, jti)

@@ -8,10 +8,10 @@ import (
 	"log"
 	"time"
 
-	"diary-service/internal/domain/notification"
-	"diary-service/internal/domain/websocket"
-	"diary-service/internal/repository/postgres"
-	ws "diary-service/internal/websocket"
+	"zentora-service/internal/domain/notification"
+	"zentora-service/internal/domain/websocket"
+	"zentora-service/internal/repository/postgres"
+	ws "zentora-service/internal/websocket"
 )
 
 // NotificationService handles notification business logic
@@ -238,7 +238,7 @@ func (s *NotificationService) CreateBulkAndPush(ctx context.Context, requests []
 func (s *NotificationService) BroadcastSystemNotification(ctx context.Context, title, message string, metadata map[string]interface{}) error {
 	// This would require getting all active users from auth service
 	// For now, just broadcast via WebSocket to all connected clients
-	
+
 	s.hub.BroadcastSystemAlert(&websocket.SystemAlertData{
 		Severity: "info",
 		Title:    title,
@@ -279,7 +279,7 @@ func (s *NotificationService) SendInfoNotification(ctx context.Context, identity
 // SendTimedNotification sends a notification that expires after duration
 func (s *NotificationService) SendTimedNotification(ctx context.Context, identityID int64, title, message string, duration time.Duration, metadata map[string]interface{}) error {
 	expiresAt := time.Now().Add(duration)
-	
+
 	req := &notification.CreateNotificationRequest{
 		IdentityID: identityID,
 		Title:      title,

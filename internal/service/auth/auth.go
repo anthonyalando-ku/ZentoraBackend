@@ -6,18 +6,19 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/base64"
+
 	//"errors"
 	"fmt"
 	"time"
 
-	"diary-service/internal/domain/auth"
-	"diary-service/internal/domain/websocket"
-	xerrors "diary-service/internal/pkg/errors"
-	"diary-service/internal/pkg/jwt"
-	"diary-service/internal/pkg/session"
-	"diary-service/internal/repository/postgres"
-	"diary-service/internal/service/email"
-	ws "diary-service/internal/websocket"
+	"zentora-service/internal/domain/auth"
+	"zentora-service/internal/domain/websocket"
+	xerrors "zentora-service/internal/pkg/errors"
+	"zentora-service/internal/pkg/jwt"
+	"zentora-service/internal/pkg/session"
+	"zentora-service/internal/repository/postgres"
+	"zentora-service/internal/service/email"
+	ws "zentora-service/internal/websocket"
 
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -30,7 +31,7 @@ type AuthService struct {
 	sessionManager *session.Manager
 	rateLimiter    *session.RateLimiter
 	emailSender    *email.EmailSender
-	emailHelper *EmailHelper
+	emailHelper    *EmailHelper
 	hub            *ws.Hub
 	cache          *redis.Client
 	logger         *zap.Logger
@@ -157,35 +158,36 @@ func (s *AuthService) Register(ctx context.Context, req *auth.RegisterRequest) (
 		}
 	} else {
 		// Send welcome email for pre-verified accounts
-		s.emailHelper.SendWelcomeEmail(ctx, req.Email, req.FullName);
-		
+		s.emailHelper.SendWelcomeEmail(ctx, req.Email, req.FullName)
+
 	}
 
 	// Auto-login after registration
 	return s.loginWithIdentity(ctx, identity, provider, req.Device, req.IPAddress, req.UserAgent)
 }
+
 // Update methods to use emailHelper
 func (s *AuthService) SendEmailVerification(ctx context.Context, identityID int64, email string) error {
 	// Generate verification token
 	token := generateToken()
-	
+
 	vToken := &auth.VerificationToken{
 		IdentityID: identityID,
 		TokenType:  "email_verify",
 		Token:      token,
 		ExpiresAt:  time.Now().Add(24 * time.Hour),
 	}
-	
+
 	if err := s.authRepo.CreateVerificationToken(ctx, vToken); err != nil {
 		return err
 	}
-	
+
 	profile, _ := s.authRepo.GetUserProfile(ctx, identityID)
 	fullName := "User"
 	if profile != nil && profile.FullName.Valid {
 		fullName = profile.FullName.String
 	}
-	
+
 	s.emailHelper.SendEmailVerification(ctx, email, fullName, token)
 	return nil
 }
@@ -195,6 +197,7 @@ func generateToken() string {
 	rand.Read(tokenBytes)
 	return base64.URLEncoding.EncodeToString(tokenBytes)
 }
+
 // ========== Login ==========
 
 // Login authenticates a user with email/password
@@ -280,14 +283,14 @@ func (s *AuthService) loginWithIdentity(ctx context.Context, identity *auth.Iden
 
 	// Create session in database
 	dbSession := &auth.Session{
-		IdentityID:    identity.ID,
-		SessionToken:  accessJTI,
-		RefreshToken:  sql.NullString{String: refreshJTI, Valid: true},
-		Provider:      provider.Provider,
-		IPAddress:     sql.NullString{String: ipAddress, Valid: ipAddress != ""},
-		UserAgent:     sql.NullString{String: userAgent, Valid: userAgent != ""},
-		DeviceID:      sql.NullString{String: device, Valid: device != ""},
-		ExpiresAt:     expiresAt,
+		IdentityID:   identity.ID,
+		SessionToken: accessJTI,
+		RefreshToken: sql.NullString{String: refreshJTI, Valid: true},
+		Provider:     provider.Provider,
+		IPAddress:    sql.NullString{String: ipAddress, Valid: ipAddress != ""},
+		UserAgent:    sql.NullString{String: userAgent, Valid: userAgent != ""},
+		DeviceID:     sql.NullString{String: device, Valid: device != ""},
+		ExpiresAt:    expiresAt,
 	}
 
 	if err := s.authRepo.CreateSession(ctx, dbSession); err != nil {
@@ -327,10 +330,10 @@ func (s *AuthService) loginWithIdentity(ctx context.Context, identity *auth.Iden
 		ExpiresIn:    int(s.jwtManager.Generator.Ttl.Seconds()),
 		ExpiresAt:    expiresAt,
 		User: auth.UserInfo{
-			IdentityID: identity.ID,
-			Email:      identity.Email.String,
-			FullName:   profile.FullName.String,
-			Roles:      roles,
+			IdentityID:  identity.ID,
+			Email:       identity.Email.String,
+			FullName:    profile.FullName.String,
+			Roles:       roles,
 			Permissions: permissions,
 		},
 	}, nil
@@ -713,10 +716,10 @@ func (s *AuthService) CreateAdmin(ctx context.Context, req *auth.CreateAdminRequ
 
 	// Create identity
 	identity := &auth.Identity{
-		Email:  sql.NullString{String: req.Email, Valid: true},
-		Phone:  sql.NullString{String: req.Phone, Valid: req.Phone != ""},
-		Status: "active", // Admins are active by default
-		EmailVerified: true, // Assume email is verified for admins
+		Email:           sql.NullString{String: req.Email, Valid: true},
+		Phone:           sql.NullString{String: req.Phone, Valid: req.Phone != ""},
+		Status:          "active", // Admins are active by default
+		EmailVerified:   true,     // Assume email is verified for admins
 		EmailVerifiedAt: sql.NullTime{Time: time.Now(), Valid: true},
 	}
 

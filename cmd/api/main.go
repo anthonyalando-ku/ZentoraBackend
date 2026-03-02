@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
-	"diary-service/internal/app"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+	"zentora-service/internal/app"
 
 	"github.com/joho/godotenv"
 )

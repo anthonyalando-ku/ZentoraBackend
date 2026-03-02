@@ -5,10 +5,10 @@ import (
 	"net/http"
 	//"strings"
 
-	"diary-service/internal/domain/auth"
-	"diary-service/internal/middleware"
-	"diary-service/internal/pkg/response"
-	authUsecase "diary-service/internal/service/auth"
+	"zentora-service/internal/domain/auth"
+	"zentora-service/internal/middleware"
+	"zentora-service/internal/pkg/response"
+	authUsecase "zentora-service/internal/service/auth"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"

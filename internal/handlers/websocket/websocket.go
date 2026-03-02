@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"diary-service/internal/pkg/response"
-	ws "diary-service/internal/websocket"
+	"zentora-service/internal/pkg/response"
+	ws "zentora-service/internal/websocket"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"

@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strconv"
 
-	"diary-service/internal/domain/notification"
-	"diary-service/internal/middleware"
-	"diary-service/internal/pkg/response"
-	service "diary-service/internal/service/notification"
+	"zentora-service/internal/domain/notification"
+	"zentora-service/internal/middleware"
+	"zentora-service/internal/pkg/response"
+	service "zentora-service/internal/service/notification"
 
 	"github.com/gin-gonic/gin"
 )
@@ -192,10 +192,10 @@ func (h *NotificationHandler) CreateNotification(c *gin.Context) {
 // BroadcastNotification broadcasts a notification to all users (admin only)
 func (h *NotificationHandler) BroadcastNotification(c *gin.Context) {
 	var req struct {
-		Title    string                 `json:"title" binding:"required"`
-		Message  string                 `json:"message" binding:"required"`
+		Title    string                        `json:"title" binding:"required"`
+		Message  string                        `json:"message" binding:"required"`
 		Type     notification.NotificationType `json:"type"`
-		Metadata map[string]interface{} `json:"metadata"`
+		Metadata map[string]interface{}        `json:"metadata"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -219,11 +219,11 @@ func (h *NotificationHandler) BroadcastNotification(c *gin.Context) {
 // SendBulkNotifications sends notifications to multiple users (admin only)
 func (h *NotificationHandler) SendBulkNotifications(c *gin.Context) {
 	var req struct {
-		IdentityIDs []int64                             `json:"identity_ids" binding:"required"`
-		Title       string                              `json:"title" binding:"required"`
-		Message     string                              `json:"message" binding:"required"`
-		Type        notification.NotificationType       `json:"type"`
-		Metadata    map[string]interface{}              `json:"metadata"`
+		IdentityIDs []int64                       `json:"identity_ids" binding:"required"`
+		Title       string                        `json:"title" binding:"required"`
+		Message     string                        `json:"message" binding:"required"`
+		Type        notification.NotificationType `json:"type"`
+		Metadata    map[string]interface{}        `json:"metadata"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {

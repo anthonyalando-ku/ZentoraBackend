@@ -4,7 +4,7 @@ package middleware
 import (
 	"net/http"
 
-	"diary-service/internal/pkg/response"
+	"zentora-service/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"

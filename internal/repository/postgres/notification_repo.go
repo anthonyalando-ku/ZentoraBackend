@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"diary-service/internal/domain/notification"
+	"zentora-service/internal/domain/notification"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -57,9 +57,9 @@ func (r *NotificationRepository) FindByID(ctx context.Context, id int64) (*notif
 
 	var n notification.Notification
 	var metadataJSON []byte
-	
+
 	err := r.db.QueryRow(ctx, query, id).Scan(
-		&n.ID, &n.IdentityID, &n.Title, &n.Message, &n.Type, 
+		&n.ID, &n.IdentityID, &n.Title, &n.Message, &n.Type,
 		&metadataJSON, &n.IsRead, &n.CreatedAt, &n.ReadAt, &n.ExpiresAt,
 	)
 
@@ -143,7 +143,7 @@ func (r *NotificationRepository) GetUserNotifications(ctx context.Context, ident
 	for rows.Next() {
 		var n notification.Notification
 		var metadataJSON []byte
-		
+
 		err := rows.Scan(
 			&n.ID, &n.IdentityID, &n.Title, &n.Message, &n.Type,
 			&metadataJSON, &n.IsRead, &n.CreatedAt, &n.ReadAt, &n.ExpiresAt,
@@ -184,7 +184,7 @@ func (r *NotificationRepository) GetLatestNotifications(ctx context.Context, ide
 	for rows.Next() {
 		var n notification.Notification
 		var metadataJSON []byte
-		
+
 		err := rows.Scan(
 			&n.ID, &n.IdentityID, &n.Title, &n.Message, &n.Type,
 			&metadataJSON, &n.IsRead, &n.CreatedAt, &n.ReadAt, &n.ExpiresAt,

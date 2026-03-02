@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"diary-service/internal/domain/user"
-	"diary-service/internal/repository/postgres"
+	"zentora-service/internal/domain/user"
+	"zentora-service/internal/repository/postgres"
 )
 
 // UserService provides business logic for user-related operations.

@@ -1,0 +1,1158 @@
+{
+  "info": {
+    "name": "Zentora",
+    "description": "Complete Postman collection for the Zentora e-commerce catalog API. Covers authentication, categories, brands, tags, attributes, products, variants, inventory, and discounts.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8002/api/v1", "type": "string" },
+    { "key": "admin_token", "value": "", "type": "string" },
+    { "key": "user_token", "value": "", "type": "string" },
+    { "key": "product_id", "value": "1", "type": "string" },
+    { "key": "category_id", "value": "1", "type": "string" },
+    { "key": "brand_id", "value": "1", "type": "string" },
+    { "key": "variant_id", "value": "1", "type": "string" },
+    { "key": "attribute_id", "value": "1", "type": "string" },
+    { "key": "tag_id", "value": "1", "type": "string" },
+    { "key": "discount_id", "value": "1", "type": "string" },
+    { "key": "location_id", "value": "1", "type": "string" },
+    { "key": "image_id", "value": "1", "type": "string" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{admin_token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Auth",
+      "description": "Authentication endpoints for registration, login, session management, and password flows.",
+      "item": [
+        {
+          "name": "Register",
+          "description": "Create a new user account.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/auth/register", "host": ["{{base_url}}"], "path": ["auth", "register"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"Password123!\",\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "description": "Authenticate and receive a JWT access token. Copy the token into the admin_token or user_token collection variable.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/auth/login", "host": ["{{base_url}}"], "path": ["auth", "login"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@zentora.com\",\n  \"password\": \"Admin123!\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var json = pm.response.json();",
+                  "if (json.data && json.data.token) {",
+                  "  pm.collectionVariables.set('admin_token', json.data.token);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Me",
+          "description": "Retrieve the authenticated user profile.",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/auth/me", "host": ["{{base_url}}"], "path": ["auth", "me"] }
+          }
+        },
+        {
+          "name": "Logout",
+          "description": "Invalidate the current session token.",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/auth/logout", "host": ["{{base_url}}"], "path": ["auth", "logout"] }
+          }
+        },
+        {
+          "name": "Change Password",
+          "description": "Change the authenticated user password.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/auth/change-password", "host": ["{{base_url}}"], "path": ["auth", "change-password"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"Admin123!\",\n  \"new_password\": \"NewAdmin123!\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Forgot Password",
+          "description": "Request a password reset email for the given address.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/auth/forgot-password", "host": ["{{base_url}}"], "path": ["auth", "forgot-password"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Reset Password",
+          "description": "Reset the password using the token received by email.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/auth/reset-password", "host": ["{{base_url}}"], "path": ["auth", "reset-password"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"reset-token-here\",\n  \"new_password\": \"NewPassword123!\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Active Sessions",
+          "description": "List all active sessions for the current user.",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/auth/sessions", "host": ["{{base_url}}"], "path": ["auth", "sessions"] }
+          }
+        },
+        {
+          "name": "Revoke Session",
+          "description": "Revoke a specific session by its ID.",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/auth/sessions/{{session_id}}", "host": ["{{base_url}}"], "path": ["auth", "sessions", "{{session_id}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Categories",
+      "description": "Manage product categories. Categories are hierarchical using a closure table. Slugs are auto-generated from names.",
+      "item": [
+        {
+          "name": "List Categories",
+          "description": "Retrieve all categories. Optional query params: active_only=true, parent_id=0 (roots only), parent_id=N (children of N).",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/catalog/categories?active_only=true",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "categories"],
+              "query": [
+                { "key": "active_only", "value": "true", "description": "Return only active categories" },
+                { "key": "parent_id", "value": "0", "description": "0 = root categories only; N = children of category N", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Category",
+          "description": "Retrieve a single category by its numeric ID.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/categories/{{category_id}}", "host": ["{{base_url}}"], "path": ["catalog", "categories", "{{category_id}}"] }
+          }
+        },
+        {
+          "name": "Get Category Tree",
+          "description": "Retrieve a category with its full ancestor chain (breadcrumb path) using the closure table.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/categories/{{category_id}}/tree", "host": ["{{base_url}}"], "path": ["catalog", "categories", "{{category_id}}", "tree"] }
+          }
+        },
+        {
+          "name": "Get Category Descendants",
+          "description": "Retrieve all descendants of a category (all levels) using the closure table. Returns ancestor_id, descendant_id, and depth.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/categories/{{category_id}}/descendants", "host": ["{{base_url}}"], "path": ["catalog", "categories", "{{category_id}}", "descendants"] }
+          }
+        },
+        {
+          "name": "Create Category",
+          "description": "Admin: Create a new category. Slug is auto-generated from the name. parent_id is optional — omit for a root category.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/categories", "host": ["{{base_url}}"], "path": ["admin", "catalog", "categories"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Electronics\",\n  \"is_active\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Create Sub-Category",
+          "description": "Admin: Create a child category under an existing parent. The closure table trigger populates all ancestor rows automatically.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/categories", "host": ["{{base_url}}"], "path": ["admin", "catalog", "categories"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Smartphones\",\n  \"parent_id\": {{category_id}},\n  \"is_active\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Category",
+          "description": "Admin: Partially update a category. Set parent_id to 0 to make it a root. Changing the name regenerates the slug.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/categories/{{category_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "categories", "{{category_id}}"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Consumer Electronics\",\n  \"is_active\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Category",
+          "description": "Admin: Delete a category. The closure table rows are removed automatically by the database trigger.",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/admin/catalog/categories/{{category_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "categories", "{{category_id}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Brands",
+      "description": "Manage product brands. Slugs are auto-generated from names. Brands are created in advance before products.",
+      "item": [
+        {
+          "name": "List Brands",
+          "description": "Retrieve all brands. Use active_only=true to filter inactive brands.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/catalog/brands?active_only=true",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "brands"],
+              "query": [{ "key": "active_only", "value": "true" }]
+            }
+          }
+        },
+        {
+          "name": "Get Brand",
+          "description": "Retrieve a single brand by ID.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/brands/{{brand_id}}", "host": ["{{base_url}}"], "path": ["catalog", "brands", "{{brand_id}}"] }
+          }
+        },
+        {
+          "name": "Create Brand",
+          "description": "Admin: Create a new brand. Slug is auto-generated from the name. logo_url is optional.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/brands", "host": ["{{base_url}}"], "path": ["admin", "catalog", "brands"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Samsung\",\n  \"logo_url\": \"https://cdn.zentora.com/brands/samsung.png\",\n  \"is_active\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Brand",
+          "description": "Admin: Partially update a brand. Only provided fields are updated. Changing the name regenerates the slug.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/brands/{{brand_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "brands", "{{brand_id}}"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Brand",
+          "description": "Admin: Delete a brand by ID.",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/admin/catalog/brands/{{brand_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "brands", "{{brand_id}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tags",
+      "description": "Product tags. Tags are created automatically (find-or-create) when added to a product. Public read-only endpoints are provided.",
+      "item": [
+        {
+          "name": "List Tags",
+          "description": "Retrieve all tags ordered by name.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/tags", "host": ["{{base_url}}"], "path": ["catalog", "tags"] }
+          }
+        },
+        {
+          "name": "Get Tag",
+          "description": "Retrieve a single tag by ID.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/tags/{{tag_id}}", "host": ["{{base_url}}"], "path": ["catalog", "tags", "{{tag_id}}"] }
+          }
+        },
+        {
+          "name": "Get Product Tags",
+          "description": "Retrieve all tags linked to a specific product.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/products/{{product_id}}/tags", "host": ["{{base_url}}"], "path": ["catalog", "products", "{{product_id}}", "tags"] }
+          }
+        },
+        {
+          "name": "Add Tag to Product",
+          "description": "Admin: Add a single tag to a product by name. If the tag does not exist it is created automatically (find-or-create).",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/products/{{product_id}}/tags", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products", "{{product_id}}", "tags"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"wireless\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Remove Tag from Product",
+          "description": "Admin: Remove a tag link from a product by tag ID. Does not delete the tag itself.",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/admin/catalog/products/{{product_id}}/tags/{{tag_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products", "{{product_id}}", "tags", "{{tag_id}}"] }
+          }
+        },
+        {
+          "name": "Set Product Tags",
+          "description": "Admin: Replace all tags on a product atomically. Tags that do not exist are created automatically. Existing tags not in the list are unlinked.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/products/{{product_id}}/tags", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products", "{{product_id}}", "tags"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tag_names\": [\"wireless\", \"bluetooth\", \"portable\"]\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Attributes",
+      "description": "Product attributes (e.g. Color, Size) and their values (e.g. Red, XL). Attributes flagged as is_variant_dimension are used to define variant combinations.",
+      "item": [
+        {
+          "name": "List Attributes",
+          "description": "Retrieve all attributes. Append ?with_values=true to include attribute values in the response.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/catalog/attributes?with_values=true",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "attributes"],
+              "query": [{ "key": "with_values", "value": "true", "description": "Include attribute values in response" }]
+            }
+          }
+        },
+        {
+          "name": "Get Attribute",
+          "description": "Retrieve a single attribute by ID.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/attributes/{{attribute_id}}", "host": ["{{base_url}}"], "path": ["catalog", "attributes", "{{attribute_id}}"] }
+          }
+        },
+        {
+          "name": "List Attribute Values",
+          "description": "Retrieve all values for a given attribute.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/attributes/{{attribute_id}}/values", "host": ["{{base_url}}"], "path": ["catalog", "attributes", "{{attribute_id}}", "values"] }
+          }
+        },
+        {
+          "name": "Create Attribute",
+          "description": "Admin: Create a new attribute. Set is_variant_dimension=true for attributes that define product variants (e.g. Size, Color).",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/attributes", "host": ["{{base_url}}"], "path": ["admin", "catalog", "attributes"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Color\",\n  \"is_variant_dimension\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Attribute",
+          "description": "Admin: Partially update an attribute. Changing the name regenerates the slug.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/attributes/{{attribute_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "attributes", "{{attribute_id}}"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_variant_dimension\": false\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Attribute",
+          "description": "Admin: Delete an attribute and all its values (cascades via FK).",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/admin/catalog/attributes/{{attribute_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "attributes", "{{attribute_id}}"] }
+          }
+        },
+        {
+          "name": "Add Attribute Value",
+          "description": "Admin: Add a new value to an existing attribute.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/attributes/{{attribute_id}}/values", "host": ["{{base_url}}"], "path": ["admin", "catalog", "attributes", "{{attribute_id}}", "values"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": \"Red\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Attribute Value",
+          "description": "Admin: Delete a specific attribute value by its ID. Use value_id path param.",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/admin/catalog/attributes/{{attribute_id}}/values/{{value_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "attributes", "{{attribute_id}}", "values", "{{value_id}}"] }
+          }
+        },
+        {
+          "name": "Get Product Attribute Values",
+          "description": "Retrieve all attribute values linked at the product level (not variant level).",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/products/{{product_id}}/attribute-values", "host": ["{{base_url}}"], "path": ["catalog", "products", "{{product_id}}", "attribute-values"] }
+          }
+        },
+        {
+          "name": "Set Product Attribute Values",
+          "description": "Admin: Replace all attribute values linked to a product atomically. Values must already exist in attribute_values.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/products/{{product_id}}/attribute-values", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products", "{{product_id}}", "attribute-values"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attribute_value_ids\": [1, 2, 3]\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Products",
+      "description": "Core product management. Product creation is fully transactional — brand, categories, images (file upload), variants, tags, attributes, inventory, and discount targets are all created in a single transaction.",
+      "item": [
+        {
+          "name": "List Products",
+          "description": "Retrieve a paginated list of products. Supports filtering by status, brand, category, featured flag, and keyword search.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/catalog/products?page=1&page_size=20",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "products"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "page_size", "value": "20" },
+                { "key": "status", "value": "active", "disabled": true, "description": "active | draft | archived" },
+                { "key": "brand_id", "value": "1", "disabled": true },
+                { "key": "category_id", "value": "1", "disabled": true },
+                { "key": "is_featured", "value": "true", "disabled": true },
+                { "key": "q", "value": "samsung", "disabled": true, "description": "Keyword search on name and short_description" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Product by ID",
+          "description": "Retrieve a product by ID. Add load_related=true to fetch categories, tags, attribute values, and variants in one call. Images are always returned.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/catalog/products/{{product_id}}?load_related=true",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "products", "{{product_id}}"],
+              "query": [{ "key": "load_related", "value": "true", "description": "Include categories, tags, attribute values, variants" }]
+            }
+          }
+        },
+        {
+          "name": "Get Product by Slug",
+          "description": "Retrieve a product by its URL slug. Always loads full related data.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/products/slug/samsung-galaxy-s24", "host": ["{{base_url}}"], "path": ["catalog", "products", "slug", "samsung-galaxy-s24"] }
+          }
+        },
+        {
+          "name": "Create Product",
+          "description": "Admin: Create a product with all related data in a single transaction. Requires multipart/form-data. The JSON fields are sent as the 'data' part and images as 'images' files. brand_id, at least one category_id, at least one variant, and at least one image are required.",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/admin/catalog/products", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products"] },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "data",
+                  "value": "{\n  \"name\": \"Samsung Galaxy S24\",\n  \"description\": \"Flagship Android smartphone with AI features.\",\n  \"short_description\": \"Galaxy S24 - AI-powered flagship.\",\n  \"brand_id\": 1,\n  \"base_price\": 999.99,\n  \"status\": \"active\",\n  \"is_featured\": true,\n  \"is_digital\": false,\n  \"category_ids\": [1, 2],\n  \"tag_names\": [\"smartphone\", \"android\", \"5g\"],\n  \"attribute_value_ids\": [1, 2],\n  \"variants\": [\n    {\n      \"sku\": \"SGS24-BLK-256\",\n      \"price\": 999.99,\n      \"weight\": 0.167,\n      \"is_active\": true,\n      \"attribute_value_ids\": [1, 3],\n      \"quantity\": 100,\n      \"location_id\": 1\n    },\n    {\n      \"sku\": \"SGS24-WHT-256\",\n      \"price\": 999.99,\n      \"weight\": 0.167,\n      \"is_active\": true,\n      \"attribute_value_ids\": [2, 3],\n      \"quantity\": 80\n    }\n  ],\n  \"discount\": {\n    \"discount_id\": 1\n  }\n}",
+                  "type": "text",
+                  "description": "Full product JSON payload"
+                },
+                {
+                  "key": "images",
+                  "type": "file",
+                  "description": "Primary product image (first file is set as primary)"
+                },
+                {
+                  "key": "images",
+                  "type": "file",
+                  "description": "Additional product image"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Update Product",
+          "description": "Admin: Partially update a product. Only provided fields are updated. Changing the name regenerates the slug.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/products/{{product_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products", "{{product_id}}"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"base_price\": 899.99,\n  \"is_featured\": false,\n  \"status\": \"active\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Product",
+          "description": "Admin: Delete a product. All related rows (images, tags, categories, variants, inventory) are cascade-deleted by FK constraints.",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/admin/catalog/products/{{product_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products", "{{product_id}}"] }
+          }
+        },
+        {
+          "name": "Get Product Images",
+          "description": "Retrieve all images for a product ordered by primary flag then sort_order.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/products/{{product_id}}/images", "host": ["{{base_url}}"], "path": ["catalog", "products", "{{product_id}}", "images"] }
+          }
+        },
+        {
+          "name": "Add Product Image",
+          "description": "Admin: Upload a single image file for a product. Use multipart/form-data with field name 'image'.",
+          "request": {
+            "method": "POST",
+            "url": { "raw": "{{base_url}}/admin/catalog/products/{{product_id}}/images", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products", "{{product_id}}", "images"] },
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                { "key": "image", "type": "file", "description": "Image file to upload" },
+                { "key": "is_primary", "value": "false", "type": "text" },
+                { "key": "sort_order", "value": "1", "type": "text" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Delete Product Image",
+          "description": "Admin: Delete a product image by its image ID.",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/admin/catalog/products/{{product_id}}/images/{{image_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products", "{{product_id}}", "images", "{{image_id}}"] }
+          }
+        },
+        {
+          "name": "Set Primary Image",
+          "description": "Admin: Mark one image as primary and clear the flag on all other images for the same product.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/products/{{product_id}}/images/{{image_id}}/primary", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products", "{{product_id}}", "images", "{{image_id}}", "primary"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"image_id\": {{image_id}}\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Product Categories",
+          "description": "Retrieve all categories linked to a product.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/products/{{product_id}}/categories", "host": ["{{base_url}}"], "path": ["catalog", "products", "{{product_id}}", "categories"] }
+          }
+        },
+        {
+          "name": "Add Product Categories",
+          "description": "Admin: Link one or more categories to a product. Existing links are preserved (ON CONFLICT DO NOTHING).",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/products/{{product_id}}/categories", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products", "{{product_id}}", "categories"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category_ids\": [1, 2, 3]\n}"
+            }
+          }
+        },
+        {
+          "name": "Remove Product Category",
+          "description": "Admin: Remove a single category link from a product.",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/admin/catalog/products/{{product_id}}/categories/{{category_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products", "{{product_id}}", "categories", "{{category_id}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Variants",
+      "description": "Product variants combine a product with specific attribute values (e.g. Red + XL). Each variant has its own SKU and price.",
+      "item": [
+        {
+          "name": "List Variants by Product",
+          "description": "Retrieve all variants for a product. Use active_only=true to filter inactive variants.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/catalog/products/{{product_id}}/variants?active_only=true",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "products", "{{product_id}}", "variants"],
+              "query": [{ "key": "active_only", "value": "true" }]
+            }
+          }
+        },
+        {
+          "name": "Get Variant",
+          "description": "Retrieve a single variant by its variant_id.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/products/{{product_id}}/variants/{{variant_id}}", "host": ["{{base_url}}"], "path": ["catalog", "products", "{{product_id}}", "variants", "{{variant_id}}"] }
+          }
+        },
+        {
+          "name": "Create Variant",
+          "description": "Admin: Create a new variant for an existing product. Optionally link attribute value IDs that define this variant combination.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/products/{{product_id}}/variants", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products", "{{product_id}}", "variants"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"SGS24-GRN-512\",\n  \"price\": 1099.99,\n  \"weight\": 0.167,\n  \"is_active\": true,\n  \"attribute_value_ids\": [3, 4]\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Variant",
+          "description": "Admin: Partially update a variant. Only provided fields are updated.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/products/{{product_id}}/variants/{{variant_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products", "{{product_id}}", "variants", "{{variant_id}}"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 1049.99,\n  \"is_active\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Variant",
+          "description": "Admin: Delete a variant. Inventory items and attribute value links are cascade-deleted.",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/admin/catalog/products/{{product_id}}/variants/{{variant_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products", "{{product_id}}", "variants", "{{variant_id}}"] }
+          }
+        },
+        {
+          "name": "Get Variant Attribute Values",
+          "description": "Retrieve the attribute value IDs linked to a variant.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/products/{{product_id}}/variants/{{variant_id}}/attribute-values", "host": ["{{base_url}}"], "path": ["catalog", "products", "{{product_id}}", "variants", "{{variant_id}}", "attribute-values"] }
+          }
+        },
+        {
+          "name": "Set Variant Attribute Values",
+          "description": "Admin: Replace all attribute values linked to a variant atomically.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/products/{{product_id}}/variants/{{variant_id}}/attribute-values", "host": ["{{base_url}}"], "path": ["admin", "catalog", "products", "{{product_id}}", "variants", "{{variant_id}}", "attribute-values"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"attribute_value_ids\": [1, 5]\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Inventory",
+      "description": "Inventory locations and per-variant stock management. Stock operations (reserve, release, adjust) are transactional.",
+      "item": [
+        {
+          "name": "List Locations",
+          "description": "Retrieve all inventory locations. Use active_only=true to filter.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/catalog/inventory/locations?active_only=true",
+              "host": ["{{base_url}}"],
+              "path": ["catalog", "inventory", "locations"],
+              "query": [{ "key": "active_only", "value": "true" }]
+            }
+          }
+        },
+        {
+          "name": "Get Location",
+          "description": "Retrieve a single inventory location by ID.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/inventory/locations/{{location_id}}", "host": ["{{base_url}}"], "path": ["catalog", "inventory", "locations", "{{location_id}}"] }
+          }
+        },
+        {
+          "name": "Create Location",
+          "description": "Admin: Create a new inventory location. location_code must be unique. The code MAIN is treated as the default fallback.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/inventory/locations", "host": ["{{base_url}}"], "path": ["admin", "catalog", "inventory", "locations"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Main Warehouse\",\n  \"location_code\": \"MAIN\",\n  \"is_active\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Location",
+          "description": "Admin: Partially update an inventory location.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/inventory/locations/{{location_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "inventory", "locations", "{{location_id}}"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Location",
+          "description": "Admin: Delete an inventory location. All inventory items at this location are cascade-deleted.",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/admin/catalog/inventory/locations/{{location_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "inventory", "locations", "{{location_id}}"] }
+          }
+        },
+        {
+          "name": "Get Inventory by Variant",
+          "description": "Retrieve all inventory items for a variant across all locations, including location name and code.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/inventory/variants/{{variant_id}}", "host": ["{{base_url}}"], "path": ["catalog", "inventory", "variants", "{{variant_id}}"] }
+          }
+        },
+        {
+          "name": "Get Stock Summary",
+          "description": "Retrieve aggregated stock totals (available, reserved, incoming) across all locations for a variant.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/catalog/inventory/variants/{{variant_id}}/stock", "host": ["{{base_url}}"], "path": ["catalog", "inventory", "variants", "{{variant_id}}", "stock"] }
+          }
+        },
+        {
+          "name": "Upsert Inventory Item",
+          "description": "Admin: Insert or update inventory quantities for a variant at a specific location. If the row exists it is updated; otherwise it is inserted.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/inventory/items", "host": ["{{base_url}}"], "path": ["admin", "catalog", "inventory", "items"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"variant_id\": {{variant_id}},\n  \"location_id\": {{location_id}},\n  \"available_qty\": 150,\n  \"reserved_qty\": 0,\n  \"incoming_qty\": 50\n}"
+            }
+          }
+        },
+        {
+          "name": "Adjust Available Stock",
+          "description": "Admin: Atomically increment or decrement available_qty by a delta. Use a negative delta to decrease. Returns ErrInsufficientStock if the result would go below zero.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/inventory/variants/{{variant_id}}/locations/{{location_id}}/adjust", "host": ["{{base_url}}"], "path": ["admin", "catalog", "inventory", "variants", "{{variant_id}}", "locations", "{{location_id}}", "adjust"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"delta\": -10\n}"
+            }
+          }
+        },
+        {
+          "name": "Reserve Stock",
+          "description": "Admin: Move qty from available_qty to reserved_qty atomically. Used when an order is placed. Fails if available stock is insufficient.",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/admin/catalog/inventory/variants/{{variant_id}}/locations/{{location_id}}/reserve?qty=5",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "catalog", "inventory", "variants", "{{variant_id}}", "locations", "{{location_id}}", "reserve"],
+              "query": [{ "key": "qty", "value": "5", "description": "Quantity to reserve" }]
+            }
+          }
+        },
+        {
+          "name": "Release Stock",
+          "description": "Admin: Move qty back from reserved_qty to available_qty atomically. Used when an order is cancelled.",
+          "request": {
+            "method": "PUT",
+            "url": {
+              "raw": "{{base_url}}/admin/catalog/inventory/variants/{{variant_id}}/locations/{{location_id}}/release?qty=5",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "catalog", "inventory", "variants", "{{variant_id}}", "locations", "{{location_id}}", "release"],
+              "query": [{ "key": "qty", "value": "5", "description": "Quantity to release back to available" }]
+            }
+          }
+        },
+        {
+          "name": "Delete Inventory Item",
+          "description": "Admin: Remove an inventory item row for a specific variant-location combination.",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/admin/catalog/inventory/variants/{{variant_id}}/locations/{{location_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "inventory", "variants", "{{variant_id}}", "locations", "{{location_id}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Discounts",
+      "description": "Discount codes and promotions. Discounts can target specific products, categories, or brands. Redemptions are recorded per order.",
+      "item": [
+        {
+          "name": "List Discounts",
+          "description": "Admin: Retrieve all discounts. Use active_only=true to filter, or code=X to look up a specific code.",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/admin/catalog/discounts?active_only=true",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "catalog", "discounts"],
+              "query": [
+                { "key": "active_only", "value": "true" },
+                { "key": "code", "value": "SAVE20", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Discount",
+          "description": "Admin: Retrieve a discount with its targets by ID.",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/admin/catalog/discounts/{{discount_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "discounts", "{{discount_id}}"] }
+          }
+        },
+        {
+          "name": "Create Discount - Percentage",
+          "description": "Admin: Create a percentage discount. value must be between 0 and 100. Optionally attach targets (product/category/brand) in the same request.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/discounts", "host": ["{{base_url}}"], "path": ["admin", "catalog", "discounts"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Summer Sale 20%\",\n  \"code\": \"SUMMER20\",\n  \"discount_type\": \"percentage\",\n  \"value\": 20,\n  \"min_order_amount\": 50.00,\n  \"max_redemptions\": 500,\n  \"starts_at\": \"2026-06-01T00:00:00Z\",\n  \"ends_at\": \"2026-08-31T23:59:59Z\",\n  \"is_active\": true,\n  \"targets\": [\n    { \"target_type\": \"category\", \"target_id\": 1 }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Create Discount - Fixed",
+          "description": "Admin: Create a fixed-amount discount. value is the amount deducted from the order total.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/discounts", "host": ["{{base_url}}"], "path": ["admin", "catalog", "discounts"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"KES 500 Off\",\n  \"code\": \"SAVE500\",\n  \"discount_type\": \"fixed\",\n  \"value\": 500,\n  \"min_order_amount\": 2000.00,\n  \"is_active\": true,\n  \"targets\": [\n    { \"target_type\": \"product\", \"target_id\": 1 },\n    { \"target_type\": \"product\", \"target_id\": 2 }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Discount",
+          "description": "Admin: Partially update a discount. Only provided fields are changed.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/discounts/{{discount_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "discounts", "{{discount_id}}"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"is_active\": false,\n  \"ends_at\": \"2026-07-31T23:59:59Z\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Set Discount Targets",
+          "description": "Admin: Replace all targets for a discount atomically. target_type must be 'product', 'category', or 'brand'.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/catalog/discounts/{{discount_id}}/targets", "host": ["{{base_url}}"], "path": ["admin", "catalog", "discounts", "{{discount_id}}", "targets"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targets\": [\n    { \"target_type\": \"brand\", \"target_id\": 1 },\n    { \"target_type\": \"category\", \"target_id\": 2 }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Discount",
+          "description": "Admin: Delete a discount and all its targets and redemptions (cascade).",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/admin/catalog/discounts/{{discount_id}}", "host": ["{{base_url}}"], "path": ["admin", "catalog", "discounts", "{{discount_id}}"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "User Addresses",
+      "description": "Manage saved delivery addresses for the authenticated user.",
+      "item": [
+        {
+          "name": "List Addresses",
+          "description": "Retrieve all saved addresses for the current user.",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/me/addresses", "host": ["{{base_url}}"], "path": ["me", "addresses"] }
+          }
+        },
+        {
+          "name": "Create Address",
+          "description": "Save a new delivery address for the current user. Set is_default=true to make it the default.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/me/addresses", "host": ["{{base_url}}"], "path": ["me", "addresses"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"full_name\": \"John Doe\",\n  \"phone_number\": \"+254700000000\",\n  \"country\": \"Kenya\",\n  \"county\": \"Nairobi\",\n  \"city\": \"Nairobi\",\n  \"area\": \"Westlands\",\n  \"postal_code\": \"00100\",\n  \"address_line_1\": \"123 Main Street\",\n  \"address_line_2\": \"Apt 4B\",\n  \"is_default\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Address",
+          "description": "Retrieve a single address by ID.",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/me/addresses/{{address_id}}", "host": ["{{base_url}}"], "path": ["me", "addresses", "{{address_id}}"] }
+          }
+        },
+        {
+          "name": "Update Address",
+          "description": "Update a saved address. All fields may be partially updated.",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/me/addresses/{{address_id}}", "host": ["{{base_url}}"], "path": ["me", "addresses", "{{address_id}}"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"city\": \"Mombasa\",\n  \"county\": \"Mombasa\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Address",
+          "description": "Delete a saved address by ID.",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/me/addresses/{{address_id}}", "host": ["{{base_url}}"], "path": ["me", "addresses", "{{address_id}}"] }
+          }
+        },
+        {
+          "name": "Set Default Address",
+          "description": "Mark an address as the default delivery address. Clears the default flag on all other addresses.",
+          "request": {
+            "method": "PUT",
+            "url": { "raw": "{{base_url}}/me/addresses/{{address_id}}/default", "host": ["{{base_url}}"], "path": ["me", "addresses", "{{address_id}}", "default"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "description": "In-app notifications for the authenticated user and admin broadcast endpoints.",
+      "item": [
+        {
+          "name": "Get Notifications",
+          "description": "Retrieve paginated notifications for the current user.",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/notifications", "host": ["{{base_url}}"], "path": ["notifications"] }
+          }
+        },
+        {
+          "name": "Get Latest Notifications",
+          "description": "Retrieve the most recent notifications (typically used for the notification bell dropdown).",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/notifications/latest", "host": ["{{base_url}}"], "path": ["notifications", "latest"] }
+          }
+        },
+        {
+          "name": "Get Unread Count",
+          "description": "Retrieve the total count of unread notifications for the current user.",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/notifications/count/unread", "host": ["{{base_url}}"], "path": ["notifications", "count", "unread"] }
+          }
+        },
+        {
+          "name": "Get Notification Summary",
+          "description": "Retrieve a summary of notification counts grouped by type or read status.",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/notifications/summary", "host": ["{{base_url}}"], "path": ["notifications", "summary"] }
+          }
+        },
+        {
+          "name": "Mark As Read",
+          "description": "Mark a single notification as read by its ID.",
+          "request": {
+            "method": "PUT",
+            "url": { "raw": "{{base_url}}/notifications/{{notification_id}}/read", "host": ["{{base_url}}"], "path": ["notifications", "{{notification_id}}", "read"] }
+          }
+        },
+        {
+          "name": "Mark All As Read",
+          "description": "Mark all unread notifications as read for the current user.",
+          "request": {
+            "method": "PUT",
+            "url": { "raw": "{{base_url}}/notifications/read-all", "host": ["{{base_url}}"], "path": ["notifications", "read-all"] }
+          }
+        },
+        {
+          "name": "Delete Notification",
+          "description": "Delete a single notification by its ID.",
+          "request": {
+            "method": "DELETE",
+            "url": { "raw": "{{base_url}}/notifications/{{notification_id}}", "host": ["{{base_url}}"], "path": ["notifications", "{{notification_id}}"] }
+          }
+        },
+        {
+          "name": "Admin - Create Notification",
+          "description": "Admin: Create a targeted notification for a specific user.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/notifications", "host": ["{{base_url}}"], "path": ["admin", "notifications"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": 1,\n  \"title\": \"Your order has shipped\",\n  \"message\": \"Order #12345 is on its way.\",\n  \"type\": \"order\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Admin - Bulk Notifications",
+          "description": "Admin: Send a notification to multiple users at once.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/notifications/bulk", "host": ["{{base_url}}"], "path": ["admin", "notifications", "bulk"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_ids\": [1, 2, 3],\n  \"title\": \"Flash Sale starts now\",\n  \"message\": \"Up to 50% off selected items for the next 24 hours.\",\n  \"type\": \"promotion\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Admin - Broadcast Notification",
+          "description": "Admin: Send a notification to all users.",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": { "raw": "{{base_url}}/admin/notifications/broadcast", "host": ["{{base_url}}"], "path": ["admin", "notifications", "broadcast"] },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Scheduled maintenance\",\n  \"message\": \"The platform will be down for maintenance on Saturday 03:00-05:00 UTC.\",\n  \"type\": \"system\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "description": "Service health check endpoint. No authentication required.",
+      "item": [
+        {
+          "name": "Health Check",
+          "description": "Returns HTTP 200 with status ok when the service is running.",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] }
+          }
+        }
+      ]
+    }
+  ]
+}

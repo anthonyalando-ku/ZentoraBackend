@@ -6,26 +6,28 @@ import (
 	"fmt"
 	"log"
 
-	"diary-service/internal/config"
-	"diary-service/internal/db"
-	authHandler "diary-service/internal/handlers/auth"
-	catalogH "diary-service/internal/handlers/catalog"
-	notifyH "diary-service/internal/handlers/notification"
-	userH "diary-service/internal/handlers/user"
-	wsHandler "diary-service/internal/handlers/websocket"
-	"diary-service/internal/middleware"
-	"diary-service/internal/pkg/jwt"
-	"diary-service/internal/pkg/session"
-	"diary-service/internal/repository/postgres"
-	"diary-service/internal/service/email"
-	authUsecase "diary-service/internal/service/auth"
-	catalogUsecase "diary-service/internal/service/catalog"
-	notifyUsecase "diary-service/internal/service/notification"
-	userUsecase "diary-service/internal/service/user"
-	"diary-service/internal/websocket"
-	wsHandlers "diary-service/internal/websocket/handler"
+	"zentora-service/internal/config"
+	"zentora-service/internal/db"
+	authHandler "zentora-service/internal/handlers/auth"
+	catalogH "zentora-service/internal/handlers/catalog"
+	notifyH "zentora-service/internal/handlers/notification"
+	userH "zentora-service/internal/handlers/user"
+	wsHandler "zentora-service/internal/handlers/websocket"
+	"zentora-service/internal/middleware"
+	"zentora-service/internal/pkg/jwt"
+	"zentora-service/internal/pkg/session"
+	"zentora-service/internal/repository/postgres"
+	authUsecase "zentora-service/internal/service/auth"
+	catalogUsecase "zentora-service/internal/service/catalog"
+	"zentora-service/internal/service/email"
+	notifyUsecase "zentora-service/internal/service/notification"
+	userUsecase "zentora-service/internal/service/user"
+	"zentora-service/internal/websocket"
+	wsHandlers "zentora-service/internal/websocket/handler"
 
 	"github.com/gin-gonic/gin"
+	"github.com/imagekit-developer/imagekit-go/v2"
+	"github.com/imagekit-developer/imagekit-go/v2/option"
 	"go.uber.org/zap"
 )
 
@@ -81,6 +83,14 @@ func (s *Server) Start() error {
 	sessionManager := session.NewManager(redisClient, nil) // Will set authRepo later
 	rateLimiter := session.NewRateLimiter(redisClient)
 
+	var ikClient *imagekit.Client
+	if key := s.cfg.ImageKitPrivateKey; key != "" {
+		ikClient = &imagekit.Client{}
+		*ikClient = imagekit.NewClient(
+			option.WithPrivateKey(key),
+		)
+	}
+
 	// ----- Email -----
 	emailSender := email.NewEmailSender(
 		s.cfg.SMTPHost,
@@ -88,6 +98,8 @@ func (s *Server) Start() error {
 		s.cfg.SMTPUser,
 		s.cfg.SMTPPass,
 		s.cfg.SMTPFromName,
+		s.cfg.BaseURL,
+		s.cfg.LogoURL,
 		s.cfg.SMTPSecure,
 	)
 
@@ -99,10 +111,21 @@ func (s *Server) Start() error {
 	categoryRepo := postgres.NewCategoryRepository(pool)
 	brandRepo := postgres.NewBrandRepository(pool)
 	tagRepo := postgres.NewTagRepository(pool)
-	productRepo := postgres.NewProductRepository(pool)
 	attributeRepo := postgres.NewAttributeRepository(pool)
 	variantRepo := postgres.NewVariantRepository(pool)
 	userAddressRepo := postgres.NewUserAddressRepository(pool)
+	inventoryRepo := postgres.NewInventoryRepository(pool)
+	discountRepo := postgres.NewDiscountRepository(pool)
+	productRepo := postgres.NewProductRepository(
+		pool,
+		attributeRepo,
+		brandRepo,
+		categoryRepo,
+		discountRepo,
+		inventoryRepo,
+		tagRepo,
+		variantRepo,
+	)
 
 	// Update session manager with auth repo
 	sessionManager = session.NewManager(redisClient, authRepo)
@@ -138,6 +161,9 @@ func (s *Server) Start() error {
 		productRepo,
 		attributeRepo,
 		variantRepo,
+		inventoryRepo,
+		discountRepo,
+		ikClient,
 	)
 
 	userService := userUsecase.NewUserService(userAddressRepo)

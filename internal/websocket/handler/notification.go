@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"log"
 
-	wstypes "diary-service/internal/domain/websocket"
-	"diary-service/internal/repository/postgres"
-	ws "diary-service/internal/websocket"
+	wstypes "zentora-service/internal/domain/websocket"
+	"zentora-service/internal/repository/postgres"
+	ws "zentora-service/internal/websocket"
 )
 
 type NotificationHandler struct {
@@ -37,16 +37,16 @@ func (h *NotificationHandler) HandleMessage(ctx context.Context, client *ws.Clie
 	switch msg.Type {
 	case wstypes.EventTypeNotificationRead:
 		return h.handleMarkAsRead(ctx, client, msg)
-	
+
 	case wstypes.EventTypeNotificationReadAll:
 		return h.handleMarkAllAsRead(ctx, client, msg)
-	
+
 	case wstypes.EventTypeNotificationList:
 		return h.handleListNotifications(ctx, client, msg)
-	
+
 	case wstypes.EventTypeNotificationCount:
 		return h.handleGetCount(ctx, client, msg)
-	
+
 	default:
 		return fmt.Errorf("unsupported event type: %s", msg.Type)
 	}
@@ -104,8 +104,8 @@ func (h *NotificationHandler) handleMarkAllAsRead(ctx context.Context, client *w
 // handleListNotifications returns a list of notifications
 func (h *NotificationHandler) handleListNotifications(ctx context.Context, client *ws.Client, msg *wstypes.WSMessage) error {
 	var req struct {
-		Limit  int    `json:"limit"`
-		IsRead *bool  `json:"is_read"`
+		Limit  int     `json:"limit"`
+		IsRead *bool   `json:"is_read"`
 		Type   *string `json:"type"`
 	}
 

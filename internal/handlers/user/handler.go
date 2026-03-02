@@ -6,11 +6,11 @@ import (
 	"net/http"
 	"strconv"
 
-	"diary-service/internal/domain/user"
-	"diary-service/internal/middleware"
-	xerrors "diary-service/internal/pkg/errors"
-	"diary-service/internal/pkg/response"
-	userSvc "diary-service/internal/service/user"
+	"zentora-service/internal/domain/user"
+	"zentora-service/internal/middleware"
+	xerrors "zentora-service/internal/pkg/errors"
+	"zentora-service/internal/pkg/response"
+	userSvc "zentora-service/internal/service/user"
 
 	"github.com/gin-gonic/gin"
 )
