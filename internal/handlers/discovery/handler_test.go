@@ -14,6 +14,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+type apiResponse struct {
+	Success bool            `json:"success"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data"`
+	Error   string          `json:"error"`
+}
+
 type stubDiscoveryService struct {
 	feedReq        *discoverydomain.FeedRequest
 	feedResult     []discoverydomain.ProductCard
@@ -115,6 +122,60 @@ func TestGetFeedParsesSharedFilters(t *testing.T) {
 	}
 	if !discoverySvc.feedReq.Filters.DiscountOnly || !discoverySvc.feedReq.Filters.InStockOnly {
 		t.Fatalf("filters = %#v, want discount and stock filters enabled", discoverySvc.feedReq.Filters)
+	}
+}
+
+func TestGetFeedReturnsFrontendReadyProductCards(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	discoverySvc := &stubDiscoveryService{
+		feedResult: []discoverydomain.ProductCard{
+			{
+				ProductID:       11,
+				Name:            "Phone",
+				Slug:            "phone",
+				PrimaryImage:    "https://cdn.example.com/p/11.jpg",
+				Price:           149.99,
+				Discount:        10,
+				Rating:          4.3,
+				ReviewCount:     17,
+				InventoryStatus: discoverydomain.InventoryStatusLowStock,
+				Brand:           "Zentora",
+				Category:        "Electronics",
+			},
+		},
+	}
+	handler := NewHandler(discoverySvc, &stubMetricsRunner{})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/discovery/feed?feed_type=featured", nil)
+
+	handler.GetFeedCandidates(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var response apiResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	var payload struct {
+		Items []discoverydomain.ProductCard `json:"items"`
+	}
+	if err := json.Unmarshal(response.Data, &payload); err != nil {
+		t.Fatalf("unmarshal data: %v", err)
+	}
+	if len(payload.Items) != 1 {
+		t.Fatalf("item count = %d, want 1", len(payload.Items))
+	}
+	card := payload.Items[0]
+	if card.ProductID != 11 || card.Slug != "phone" || card.PrimaryImage == "" || card.Brand == "" || card.Category == "" {
+		t.Fatalf("card = %#v, want frontend-ready product card fields", card)
+	}
+	if card.InventoryStatus != discoverydomain.InventoryStatusLowStock {
+		t.Fatalf("inventory_status = %q, want %q", card.InventoryStatus, discoverydomain.InventoryStatusLowStock)
 	}
 }
 
@@ -233,6 +294,57 @@ func TestSearchBuildsFeedSearchRequest(t *testing.T) {
 	}
 	if discoverySvc.feedReq.Filters.BrandIDs[1] != 1 {
 		t.Fatalf("second brand filter = %d, want 1", discoverySvc.feedReq.Filters.BrandIDs[1])
+	}
+}
+
+func TestSearchReturnsFrontendReadyProductCards(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	discoverySvc := &stubDiscoveryService{
+		feedResult: []discoverydomain.ProductCard{
+			{
+				ProductID:       25,
+				Name:            "Wireless Earbuds",
+				Slug:            "wireless-earbuds",
+				PrimaryImage:    "https://cdn.example.com/p/25.jpg",
+				Price:           89.50,
+				Discount:        5,
+				Rating:          4.8,
+				ReviewCount:     203,
+				InventoryStatus: discoverydomain.InventoryStatusInStock,
+				Brand:           "Zentora Audio",
+				Category:        "Audio",
+			},
+		},
+	}
+	handler := NewHandler(discoverySvc, &stubMetricsRunner{})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/discovery/search?query=earbuds", nil)
+
+	handler.Search(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var response apiResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	var payload struct {
+		Query string                        `json:"query"`
+		Items []discoverydomain.ProductCard `json:"items"`
+	}
+	if err := json.Unmarshal(response.Data, &payload); err != nil {
+		t.Fatalf("unmarshal data: %v", err)
+	}
+	if payload.Query != "earbuds" {
+		t.Fatalf("query = %q, want %q", payload.Query, "earbuds")
+	}
+	if len(payload.Items) != 1 || payload.Items[0].ProductID != 25 || payload.Items[0].PrimaryImage == "" {
+		t.Fatalf("items = %#v, want frontend-ready search product cards", payload.Items)
 	}
 }
 

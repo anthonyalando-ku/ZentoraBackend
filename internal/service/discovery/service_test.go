@@ -364,6 +364,76 @@ func TestDiscoveryServiceGetFeedBackfillsAlsoViewedUntilTrendingFillsLimit(t *te
 	}
 }
 
+func TestDiscoveryServiceGetFeedBackfillPreservesFiltersAndRemainingLimit(t *testing.T) {
+	userID := int64(9)
+	priceMin := 10.0
+	minRating := 4.5
+	req := &discoverydomain.FeedRequest{
+		FeedType: discoverydomain.FeedRecommended,
+		UserID:   &userID,
+		Limit:    4,
+		Filters: discoverydomain.FeedFilter{
+			BrandIDs:                 []int64{5, 1},
+			TagIDs:                   []int64{7},
+			VariantAttributeValueIDs: []int64{21, 13},
+			PriceMin:                 &priceMin,
+			MinRating:                &minRating,
+			DiscountOnly:             true,
+			InStockOnly:              true,
+		},
+	}
+	candidateRepo := &stubCandidateRepository{
+		resultsByFeed: map[discoverydomain.FeedType][]discoverydomain.Candidate{
+			discoverydomain.FeedRecommended: {
+				{ProductID: 1},
+			},
+			discoverydomain.FeedTrending: {
+				{ProductID: 2},
+				{ProductID: 3},
+				{ProductID: 4},
+			},
+		},
+		hydrateResult: []discoverydomain.ProductCard{
+			{ProductID: 1, Name: "One"},
+			{ProductID: 2, Name: "Two"},
+			{ProductID: 3, Name: "Three"},
+			{ProductID: 4, Name: "Four"},
+		},
+	}
+
+	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{})
+	if _, err := svc.GetFeed(context.Background(), req); err != nil {
+		t.Fatalf("GetFeed() error = %v", err)
+	}
+
+	if len(candidateRepo.reqs) != 2 {
+		t.Fatalf("request count = %d, want 2", len(candidateRepo.reqs))
+	}
+	fallbackReq := candidateRepo.reqs[1]
+	if fallbackReq.FeedType != discoverydomain.FeedTrending {
+		t.Fatalf("fallback feed type = %q, want %q", fallbackReq.FeedType, discoverydomain.FeedTrending)
+	}
+	if fallbackReq.Limit != 3 {
+		t.Fatalf("fallback limit = %d, want 3", fallbackReq.Limit)
+	}
+	if fallbackReq.UserID == nil || *fallbackReq.UserID != userID {
+		t.Fatalf("fallback user_id = %#v, want %d", fallbackReq.UserID, userID)
+	}
+	assertInt64SliceEqual(t, fallbackReq.Filters.BrandIDs, []int64{1, 5}, "fallback brand ids")
+	assertInt64SliceEqual(t, fallbackReq.Filters.TagIDs, []int64{7}, "fallback tag ids")
+	assertInt64SliceEqual(t, fallbackReq.Filters.VariantAttributeValueIDs, []int64{13, 21}, "fallback variant attribute ids")
+	if fallbackReq.Filters.PriceMin == nil || *fallbackReq.Filters.PriceMin != priceMin {
+		t.Fatalf("fallback price min = %#v, want %v", fallbackReq.Filters.PriceMin, priceMin)
+	}
+	if fallbackReq.Filters.MinRating == nil || *fallbackReq.Filters.MinRating != minRating {
+		t.Fatalf("fallback min rating = %#v, want %v", fallbackReq.Filters.MinRating, minRating)
+	}
+	if !fallbackReq.Filters.DiscountOnly || !fallbackReq.Filters.InStockOnly {
+		t.Fatalf("fallback filters = %#v, want boolean filters preserved", fallbackReq.Filters)
+	}
+	assertInt64SliceEqual(t, req.Filters.BrandIDs, []int64{1, 5}, "original request brand ids")
+}
+
 type stubCacheClient struct {
 	values map[string][]byte
 	gets   int
@@ -460,6 +530,46 @@ func TestDiscoveryServiceGetFeedStoresEditorialFeedInCache(t *testing.T) {
 	}
 	if cache.sets == 0 {
 		t.Fatal("expected editorial feed result to be stored in cache")
+	}
+}
+
+func TestDiscoveryServiceGetFeedReturnsFrontendReadyHydratedCards(t *testing.T) {
+	candidateRepo := &stubCandidateRepository{
+		result: []discoverydomain.Candidate{{ProductID: 71}},
+		hydrateResult: []discoverydomain.ProductCard{
+			{
+				ProductID:       71,
+				Name:            "Flagship Phone",
+				Slug:            "flagship-phone",
+				PrimaryImage:    "https://cdn.example.com/products/71.jpg",
+				Price:           499.99,
+				Discount:        12.50,
+				Rating:          4.7,
+				ReviewCount:     124,
+				InventoryStatus: discoverydomain.InventoryStatusInStock,
+				Brand:           "Zentora",
+				Category:        "Phones",
+			},
+		},
+	}
+	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{})
+
+	got, err := svc.GetFeed(context.Background(), &discoverydomain.FeedRequest{FeedType: discoverydomain.FeedFeatured})
+	if err != nil {
+		t.Fatalf("GetFeed() error = %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("GetFeed() card count = %d, want 1", len(got))
+	}
+	card := got[0]
+	if card.ProductID != 71 || card.Name == "" || card.Slug == "" || card.PrimaryImage == "" || card.Brand == "" || card.Category == "" {
+		t.Fatalf("GetFeed() card = %#v, want frontend-ready product card fields", card)
+	}
+	if card.Price != 499.99 || card.Discount != 12.50 || card.Rating != 4.7 || card.ReviewCount != 124 {
+		t.Fatalf("GetFeed() numeric fields = %#v, want hydrated pricing and rating fields", card)
+	}
+	if card.InventoryStatus != discoverydomain.InventoryStatusInStock {
+		t.Fatalf("GetFeed() inventory_status = %q, want %q", card.InventoryStatus, discoverydomain.InventoryStatusInStock)
 	}
 }
 

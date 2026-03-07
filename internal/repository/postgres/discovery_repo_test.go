@@ -1,11 +1,24 @@
 package postgres
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	discoverydomain "zentora-service/internal/domain/discovery"
 )
+
+func TestHydrateProductCardsReturnsEmptyForNoIDs(t *testing.T) {
+	repo := &DiscoveryRepository{}
+
+	got, err := repo.HydrateProductCards(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("HydrateProductCards() error = %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("HydrateProductCards() = %#v, want empty result", got)
+	}
+}
 
 func TestBuildEligibleProductsCTEIncludesSharedFilterClauses(t *testing.T) {
 	sql := buildEligibleProductsCTE(3)
