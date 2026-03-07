@@ -180,6 +180,37 @@ func TestDiscoveryServiceGetFeedCandidatesSkipsCategoryLookupForNonCategoryFeed(
 	}
 }
 
+func TestDiscoveryServiceGetFeedCandidatesPassesEditorialFeedToRepository(t *testing.T) {
+	candidateRepo := &stubCandidateRepository{
+		result: []discoverydomain.Candidate{
+			{ProductID: 77, Signals: map[string]float64{"merchandising_score": 15}},
+		},
+		hydrateResult: []discoverydomain.ProductCard{
+			{ProductID: 77, Name: "Editorial Pick"},
+		},
+	}
+	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{})
+
+	got, err := svc.GetFeed(context.Background(), &discoverydomain.FeedRequest{
+		FeedType: discoverydomain.FeedEditorial,
+	})
+	if err != nil {
+		t.Fatalf("GetFeed() error = %v", err)
+	}
+	if !candidateRepo.called {
+		t.Fatal("expected discovery repository to be called")
+	}
+	if candidateRepo.req == nil || candidateRepo.req.FeedType != discoverydomain.FeedEditorial {
+		t.Fatalf("repository request = %#v, want editorial feed", candidateRepo.req)
+	}
+	if !candidateRepo.hydrateCalled {
+		t.Fatal("expected hydrate method to be called")
+	}
+	if len(got) != 1 || got[0].ProductID != 77 {
+		t.Fatalf("GetFeed() = %#v, want hydrated editorial card", got)
+	}
+}
+
 func TestDiscoveryServiceGetFeedCandidatesRequiresUserForRecommendedFeed(t *testing.T) {
 	candidateRepo := &stubCandidateRepository{}
 	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{})
@@ -300,6 +331,27 @@ func TestDiscoveryServiceGetFeedStoresHotFeedInCache(t *testing.T) {
 	}
 	if cache.sets == 0 {
 		t.Fatal("expected feed result to be stored in cache")
+	}
+}
+
+func TestDiscoveryServiceGetFeedStoresEditorialFeedInCache(t *testing.T) {
+	cache := &stubCacheClient{}
+	candidateRepo := &stubCandidateRepository{
+		result:        []discoverydomain.Candidate{{ProductID: 91}},
+		hydrateResult: []discoverydomain.ProductCard{{ProductID: 91, Name: "Editorial"}},
+	}
+	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{}, cache)
+
+	req := &discoverydomain.FeedRequest{FeedType: discoverydomain.FeedEditorial}
+	got, err := svc.GetFeed(context.Background(), req)
+	if err != nil {
+		t.Fatalf("GetFeed() error = %v", err)
+	}
+	if len(got) != 1 || got[0].ProductID != 91 {
+		t.Fatalf("GetFeed() = %#v, want hydrated editorial cards", got)
+	}
+	if cache.sets == 0 {
+		t.Fatal("expected editorial feed result to be stored in cache")
 	}
 }
 

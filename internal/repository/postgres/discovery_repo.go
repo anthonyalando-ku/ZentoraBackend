@@ -70,6 +70,8 @@ func (r *DiscoveryRepository) GetFeedCandidates(ctx context.Context, req *discov
 		return r.getAlsoViewedCandidates(ctx, req)
 	case discovery.FeedFeatured:
 		return r.getFeaturedCandidates(ctx, req)
+	case discovery.FeedEditorial:
+		return r.getEditorialCandidates(ctx, req)
 	case discovery.FeedSearch:
 		return r.getSearchCandidates(ctx, req)
 	default:
@@ -570,6 +572,15 @@ func (r *DiscoveryRepository) getFeaturedCandidates(ctx context.Context, req *di
 	}, "get featured candidates")
 }
 
+func (r *DiscoveryRepository) getEditorialCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
+	return r.runFilteredCandidateQuery(ctx, req, candidateQuery{
+		query:   buildEditorialCandidateQuery(),
+		args:    []any{product.StatusActive},
+		orderBy: "ranked.merchandising_score DESC, ranked.freshness_score DESC, ranked.product_id DESC",
+		signals: []string{"merchandising_score", "freshness_score"},
+	}, "get editorial candidates")
+}
+
 func (r *DiscoveryRepository) getSearchCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const q = `
 		WITH search_input AS (
@@ -693,6 +704,68 @@ func buildEligibleProductsArgs(filters discovery.FeedFilter) []any {
 		filters.InStockOnly,
 		filters.VariantAttributeValueIDs,
 	}
+}
+
+func buildEditorialCandidateQuery() string {
+	return `
+		WITH active_sections AS (
+			SELECT id, type, reference_id, sort_order
+			FROM homepage_sections
+			WHERE is_active = TRUE
+		),
+		editorial_candidates AS (
+			SELECT p.id AS product_id,
+			       GREATEST(1000 - hs.sort_order, 1)::DOUBLE PRECISION AS merchandising_score,
+			       EXTRACT(EPOCH FROM p.created_at)::DOUBLE PRECISION AS freshness_score
+			FROM active_sections hs
+			JOIN products p
+			  ON hs.type = 'custom'
+			 AND hs.reference_id = p.id
+			WHERE p.status = $1
+
+			UNION ALL
+
+			SELECT p.id AS product_id,
+			       GREATEST(800 - hs.sort_order, 1)::DOUBLE PRECISION AS merchandising_score,
+			       EXTRACT(EPOCH FROM p.created_at)::DOUBLE PRECISION AS freshness_score
+			FROM active_sections hs
+			JOIN products p
+			  ON hs.type = 'featured'
+			 AND (
+			 	(hs.reference_id IS NOT NULL AND hs.reference_id = p.id)
+			 	OR (hs.reference_id IS NULL AND p.is_featured = TRUE)
+			 )
+			WHERE p.status = $1
+
+			UNION ALL
+
+			SELECT p.id AS product_id,
+			       GREATEST(600 - hs.sort_order - MIN(cc.depth), 1)::DOUBLE PRECISION AS merchandising_score,
+			       EXTRACT(EPOCH FROM p.created_at)::DOUBLE PRECISION AS freshness_score
+			FROM active_sections hs
+			JOIN product_category_map pcm ON hs.type = 'category' AND hs.reference_id = pcm.category_id
+			JOIN products p ON p.id = pcm.product_id
+			LEFT JOIN category_closure cc
+			  ON cc.ancestor_id = hs.reference_id
+			 AND cc.descendant_id = pcm.category_id
+			WHERE p.status = $1
+			GROUP BY hs.sort_order, p.id, p.created_at
+
+			UNION ALL
+
+			SELECT p.id AS product_id,
+			       (GREATEST(400 - hs.sort_order, 1) + COALESCE(pm.trending_score, 0))::DOUBLE PRECISION AS merchandising_score,
+			       EXTRACT(EPOCH FROM p.created_at)::DOUBLE PRECISION AS freshness_score
+			FROM active_sections hs
+			JOIN product_metrics pm ON hs.type = 'trending' AND pm.trending_score > 0
+			JOIN products p ON p.id = pm.product_id
+			WHERE p.status = $1
+		)
+		SELECT ec.product_id,
+		       MAX(ec.merchandising_score)::DOUBLE PRECISION AS merchandising_score,
+		       MAX(ec.freshness_score)::DOUBLE PRECISION AS freshness_score
+		FROM editorial_candidates ec
+		GROUP BY ec.product_id`
 }
 
 func buildEligibleProductsCTE(startArg int) string {

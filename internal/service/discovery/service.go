@@ -156,7 +156,8 @@ func isCacheableFeed(req *discoverydomain.FeedRequest) bool {
 		discoverydomain.FeedNewArrivals,
 		discoverydomain.FeedHighlyRated,
 		discoverydomain.FeedMostWishlisted,
-		discoverydomain.FeedFeatured:
+		discoverydomain.FeedFeatured,
+		discoverydomain.FeedEditorial:
 		return true
 	case discoverydomain.FeedRecommended:
 		return req.UserID != nil

@@ -42,3 +42,24 @@ func TestBuildEligibleProductsArgsIncludesVariantAttributeIDs(t *testing.T) {
 		t.Fatalf("variant attribute args = %#v, want [13 21]", ids)
 	}
 }
+
+func TestBuildEditorialCandidateQueryUsesHomepageSectionsSources(t *testing.T) {
+	query := buildEditorialCandidateQuery()
+
+	expectedFragments := []string{
+		"homepage_sections",
+		"hs.type = 'custom'",
+		"hs.type = 'featured'",
+		"hs.type = 'category'",
+		"hs.type = 'trending'",
+		"product_metrics",
+		"category_closure",
+		"merchandising_score",
+	}
+
+	for _, fragment := range expectedFragments {
+		if !strings.Contains(query, fragment) {
+			t.Fatalf("expected query to contain %q, got:\n%s", fragment, query)
+		}
+	}
+}
