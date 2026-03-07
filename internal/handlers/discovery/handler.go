@@ -209,6 +209,10 @@ func buildFeedRequest(c *gin.Context) (*discoverydomain.FeedRequest, error) {
 	if err != nil {
 		return nil, err
 	}
+	variantAttributeValueIDs, err := parseCSVInt64(c.Query("variant_attribute_value_ids"))
+	if err != nil {
+		return nil, err
+	}
 	priceMin, err := parseOptionalFloat64(c.Query("price_min"))
 	if err != nil {
 		return nil, err
@@ -223,13 +227,14 @@ func buildFeedRequest(c *gin.Context) (*discoverydomain.FeedRequest, error) {
 	}
 
 	req.Filters = discoverydomain.FeedFilter{
-		BrandIDs:     brandIDs,
-		TagIDs:       tagIDs,
-		PriceMin:     priceMin,
-		PriceMax:     priceMax,
-		MinRating:    minRating,
-		DiscountOnly: c.Query("discount_only") == "true",
-		InStockOnly:  c.Query("in_stock_only") == "true",
+		BrandIDs:                 brandIDs,
+		TagIDs:                   tagIDs,
+		VariantAttributeValueIDs: variantAttributeValueIDs,
+		PriceMin:                 priceMin,
+		PriceMax:                 priceMax,
+		MinRating:                minRating,
+		DiscountOnly:             c.Query("discount_only") == "true",
+		InStockOnly:              c.Query("in_stock_only") == "true",
 	}
 
 	return req, nil

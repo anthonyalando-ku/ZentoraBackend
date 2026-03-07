@@ -1,6 +1,9 @@
 package discovery
 
-import "strings"
+import (
+	"sort"
+	"strings"
+)
 
 type FeedType string
 
@@ -27,13 +30,14 @@ const (
 )
 
 type FeedFilter struct {
-	BrandIDs     []int64
-	TagIDs       []int64
-	PriceMin     *float64
-	PriceMax     *float64
-	MinRating    *float64
-	DiscountOnly bool
-	InStockOnly  bool
+	BrandIDs                 []int64
+	TagIDs                   []int64
+	VariantAttributeValueIDs []int64
+	PriceMin                 *float64
+	PriceMax                 *float64
+	MinRating                *float64
+	DiscountOnly             bool
+	InStockOnly              bool
 }
 
 type FeedRequest struct {
@@ -103,7 +107,46 @@ func (r *FeedRequest) Validate() error {
 		return ErrUserOrSessionRequired
 	}
 
+	var err error
+	if r.Filters.BrandIDs, err = normalizeFilterIDs(r.Filters.BrandIDs); err != nil {
+		return err
+	}
+	if r.Filters.TagIDs, err = normalizeFilterIDs(r.Filters.TagIDs); err != nil {
+		return err
+	}
+	if r.Filters.VariantAttributeValueIDs, err = normalizeFilterIDs(r.Filters.VariantAttributeValueIDs); err != nil {
+		return err
+	}
+	if r.Filters.PriceMin != nil && r.Filters.PriceMax != nil && *r.Filters.PriceMin > *r.Filters.PriceMax {
+		return ErrInvalidPriceRange
+	}
+	if r.Filters.MinRating != nil && (*r.Filters.MinRating < 0 || *r.Filters.MinRating > 5) {
+		return ErrInvalidRatingFilter
+	}
+
 	return nil
+}
+
+func normalizeFilterIDs(values []int64) ([]int64, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+
+	seen := make(map[int64]struct{}, len(values))
+	normalized := make([]int64, 0, len(values))
+	for _, value := range values {
+		if value <= 0 {
+			return nil, ErrInvalidFilterID
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+
+	sort.Slice(normalized, func(i, j int) bool { return normalized[i] < normalized[j] })
+	return normalized, nil
 }
 
 type Candidate struct {

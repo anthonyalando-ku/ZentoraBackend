@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"zentora-service/internal/domain/discovery"
 	"zentora-service/internal/domain/product"
@@ -14,6 +15,13 @@ import (
 
 type DiscoveryRepository struct {
 	db *pgxpool.Pool
+}
+
+type candidateQuery struct {
+	query   string
+	args    []any
+	orderBy string
+	signals []string
 }
 
 const (
@@ -43,27 +51,27 @@ func (r *DiscoveryRepository) GetFeedCandidates(ctx context.Context, req *discov
 
 	switch req.FeedType {
 	case discovery.FeedTrending:
-		return r.getTrendingCandidates(ctx, req.Limit)
+		return r.getTrendingCandidates(ctx, req)
 	case discovery.FeedBestSellers:
-		return r.getBestSellerCandidates(ctx, req.Limit)
+		return r.getBestSellerCandidates(ctx, req)
 	case discovery.FeedRecommended:
-		return r.getRecommendedCandidates(ctx, *req.UserID, req.Limit)
+		return r.getRecommendedCandidates(ctx, req)
 	case discovery.FeedCategory:
-		return r.getCategoryCandidates(ctx, *req.CategoryID, req.Limit)
+		return r.getCategoryCandidates(ctx, req)
 	case discovery.FeedDeals:
-		return r.getDealCandidates(ctx, req.Limit)
+		return r.getDealCandidates(ctx, req)
 	case discovery.FeedNewArrivals:
-		return r.getNewArrivalCandidates(ctx, req.Limit)
+		return r.getNewArrivalCandidates(ctx, req)
 	case discovery.FeedHighlyRated:
-		return r.getHighlyRatedCandidates(ctx, req.Limit)
+		return r.getHighlyRatedCandidates(ctx, req)
 	case discovery.FeedMostWishlisted:
-		return r.getMostWishlistedCandidates(ctx, req.Limit)
+		return r.getMostWishlistedCandidates(ctx, req)
 	case discovery.FeedAlsoViewed:
-		return r.getAlsoViewedCandidates(ctx, req.UserID, req.SessionID, req.Limit)
+		return r.getAlsoViewedCandidates(ctx, req)
 	case discovery.FeedFeatured:
-		return r.getFeaturedCandidates(ctx, req.Limit)
+		return r.getFeaturedCandidates(ctx, req)
 	case discovery.FeedSearch:
-		return r.getSearchCandidates(ctx, *req.Query, req.Limit)
+		return r.getSearchCandidates(ctx, req)
 	default:
 		return nil, discovery.ErrFeedNotImplemented
 	}
@@ -225,7 +233,7 @@ func (r *DiscoveryRepository) HydrateProductCards(ctx context.Context, productID
 	return cards, nil
 }
 
-func (r *DiscoveryRepository) getTrendingCandidates(ctx context.Context, limit int) ([]discovery.Candidate, error) {
+func (r *DiscoveryRepository) getTrendingCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const q = `
 		SELECT pm.product_id,
 		       pm.trending_score,
@@ -233,20 +241,16 @@ func (r *DiscoveryRepository) getTrendingCandidates(ctx context.Context, limit i
 		FROM product_metrics pm
 		JOIN products p ON p.id = pm.product_id
 		WHERE p.status = $1
-		  AND pm.trending_score > 0
-		ORDER BY pm.trending_score DESC, pm.conversion_rate DESC, pm.product_id DESC
-		LIMIT $2`
-
-	rows, err := r.db.Query(ctx, q, product.StatusActive, limit)
-	if err != nil {
-		return nil, fmt.Errorf("get trending candidates: %w", err)
-	}
-	defer rows.Close()
-
-	return scanCandidatesWithSignals(rows, "trending_score", "conversion_rate")
+		  AND pm.trending_score > 0`
+	return r.runFilteredCandidateQuery(ctx, req, candidateQuery{
+		query:   q,
+		args:    []any{product.StatusActive},
+		orderBy: "ranked.trending_score DESC, ranked.conversion_rate DESC, ranked.product_id DESC",
+		signals: []string{"trending_score", "conversion_rate"},
+	}, "get trending candidates")
 }
 
-func (r *DiscoveryRepository) getBestSellerCandidates(ctx context.Context, limit int) ([]discovery.Candidate, error) {
+func (r *DiscoveryRepository) getBestSellerCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const q = `
 		SELECT pm.product_id,
 		       pm.weekly_purchases::DOUBLE PRECISION AS weekly_purchases,
@@ -254,20 +258,16 @@ func (r *DiscoveryRepository) getBestSellerCandidates(ctx context.Context, limit
 		FROM product_metrics pm
 		JOIN products p ON p.id = pm.product_id
 		WHERE p.status = $1
-		  AND pm.weekly_purchases > 0
-		ORDER BY pm.weekly_purchases DESC, pm.conversion_rate DESC, pm.product_id DESC
-		LIMIT $2`
-
-	rows, err := r.db.Query(ctx, q, product.StatusActive, limit)
-	if err != nil {
-		return nil, fmt.Errorf("get best seller candidates: %w", err)
-	}
-	defer rows.Close()
-
-	return scanCandidatesWithSignals(rows, "weekly_purchases", "conversion_rate")
+		  AND pm.weekly_purchases > 0`
+	return r.runFilteredCandidateQuery(ctx, req, candidateQuery{
+		query:   q,
+		args:    []any{product.StatusActive},
+		orderBy: "ranked.weekly_purchases DESC, ranked.conversion_rate DESC, ranked.product_id DESC",
+		signals: []string{"weekly_purchases", "conversion_rate"},
+	}, "get best seller candidates")
 }
 
-func (r *DiscoveryRepository) getRecommendedCandidates(ctx context.Context, userID int64, limit int) ([]discovery.Candidate, error) {
+func (r *DiscoveryRepository) getRecommendedCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const q = `
 		WITH recent_user_products AS (
 			SELECT product_id
@@ -334,36 +334,28 @@ func (r *DiscoveryRepository) getRecommendedCandidates(ctx context.Context, user
 		      SELECT 1
 		      FROM recent_user_products rup
 		      WHERE rup.product_id = p.id
-		  )
-		ORDER BY
-			($4 * COALESCE(ap.personalization_score, 0)::DOUBLE PRECISION)
-			+ ($5 * COALESCE(cvp.co_view_score, 0)::DOUBLE PRECISION)
-			+ ($6 * COALESCE(pm.conversion_rate, 0)::DOUBLE PRECISION)
-			+ ($7 * COALESCE(pm.trending_score, 0)::DOUBLE PRECISION) DESC,
-			p.id DESC
-		LIMIT $8`
-
-	rows, err := r.db.Query(
-		ctx,
-		q,
-		product.StatusActive,
-		userID,
-		recentInteractionLimit,
-		recommendedAffinityWeight,
-		recommendedCoViewWeight,
-		recommendedConversionWeight,
-		recommendedTrendingWeight,
-		limit,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("get recommended candidates: %w", err)
-	}
-	defer rows.Close()
-
-	return scanCandidatesWithSignals(rows, "personalization_score", "co_view_score", "conversion_rate", "trending_score")
+		  )`
+	return r.runFilteredCandidateQuery(ctx, req, candidateQuery{
+		query: q,
+		args: []any{
+			product.StatusActive,
+			*req.UserID,
+			recentInteractionLimit,
+			recommendedAffinityWeight,
+			recommendedCoViewWeight,
+			recommendedConversionWeight,
+			recommendedTrendingWeight,
+		},
+		orderBy: `(($4 * COALESCE(ranked.personalization_score, 0)::DOUBLE PRECISION)
+			+ ($5 * COALESCE(ranked.co_view_score, 0)::DOUBLE PRECISION)
+			+ ($6 * COALESCE(ranked.conversion_rate, 0)::DOUBLE PRECISION)
+			+ ($7 * COALESCE(ranked.trending_score, 0)::DOUBLE PRECISION)) DESC,
+			ranked.product_id DESC`,
+		signals: []string{"personalization_score", "co_view_score", "conversion_rate", "trending_score"},
+	}, "get recommended candidates")
 }
 
-func (r *DiscoveryRepository) getCategoryCandidates(ctx context.Context, categoryID int64, limit int) ([]discovery.Candidate, error) {
+func (r *DiscoveryRepository) getCategoryCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const q = `
 		SELECT p.id,
 		       MAX(1.0 / (cc.depth + 1))::DOUBLE PRECISION AS category_score,
@@ -373,20 +365,17 @@ func (r *DiscoveryRepository) getCategoryCandidates(ctx context.Context, categor
 		JOIN category_closure cc ON cc.descendant_id = pcm.category_id
 		WHERE p.status = $1
 		  AND cc.ancestor_id = $2
-		GROUP BY p.id
-		ORDER BY MIN(cc.depth), p.id DESC
-		LIMIT $3`
+		GROUP BY p.id`
 
-	rows, err := r.db.Query(ctx, q, product.StatusActive, categoryID, limit)
-	if err != nil {
-		return nil, fmt.Errorf("get category candidates: %w", err)
-	}
-	defer rows.Close()
-
-	return scanCandidatesWithSignals(rows, "category_score", "category_depth")
+	return r.runFilteredCandidateQuery(ctx, req, candidateQuery{
+		query:   q,
+		args:    []any{product.StatusActive, *req.CategoryID},
+		orderBy: "ranked.category_depth ASC, ranked.product_id DESC",
+		signals: []string{"category_score", "category_depth"},
+	}, "get category candidates")
 }
 
-func (r *DiscoveryRepository) getDealCandidates(ctx context.Context, limit int) ([]discovery.Candidate, error) {
+func (r *DiscoveryRepository) getDealCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const q = `
 		WITH active_discounts AS (
 			SELECT id, discount_type, value
@@ -443,78 +432,66 @@ func (r *DiscoveryRepository) getDealCandidates(ctx context.Context, limit int) 
 		           END
 		       ), 0.0) AS discount_score
 		FROM target_products
-		GROUP BY product_id
-		ORDER BY discount_score DESC, product_id DESC
-		LIMIT $2`
+		GROUP BY product_id`
 
-	rows, err := r.db.Query(ctx, q, product.StatusActive, limit)
-	if err != nil {
-		return nil, fmt.Errorf("get deal candidates: %w", err)
-	}
-	defer rows.Close()
-
-	return scanCandidatesWithSignals(rows, "discount_score")
+	return r.runFilteredCandidateQuery(ctx, req, candidateQuery{
+		query:   q,
+		args:    []any{product.StatusActive},
+		orderBy: "ranked.discount_score DESC, ranked.product_id DESC",
+		signals: []string{"discount_score"},
+	}, "get deal candidates")
 }
 
-func (r *DiscoveryRepository) getNewArrivalCandidates(ctx context.Context, limit int) ([]discovery.Candidate, error) {
+func (r *DiscoveryRepository) getNewArrivalCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const q = `
 		SELECT p.id,
 		       EXTRACT(EPOCH FROM p.created_at)::DOUBLE PRECISION AS freshness_score
 		FROM products p
-		WHERE p.status = $1
-		ORDER BY p.created_at DESC, p.id DESC
-		LIMIT $2`
+		WHERE p.status = $1`
 
-	rows, err := r.db.Query(ctx, q, product.StatusActive, limit)
-	if err != nil {
-		return nil, fmt.Errorf("get new arrival candidates: %w", err)
-	}
-	defer rows.Close()
-
-	return scanCandidatesWithSignals(rows, "freshness_score")
+	return r.runFilteredCandidateQuery(ctx, req, candidateQuery{
+		query:   q,
+		args:    []any{product.StatusActive},
+		orderBy: "ranked.freshness_score DESC, ranked.product_id DESC",
+		signals: []string{"freshness_score"},
+	}, "get new arrival candidates")
 }
 
-func (r *DiscoveryRepository) getHighlyRatedCandidates(ctx context.Context, limit int) ([]discovery.Candidate, error) {
+func (r *DiscoveryRepository) getHighlyRatedCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const q = `
 		SELECT p.id,
 		       p.rating::DOUBLE PRECISION AS rating_score,
 		       p.review_count::DOUBLE PRECISION AS review_count
 		FROM products p
 		WHERE p.status = $1
-		  AND p.review_count > 0
-		ORDER BY p.rating DESC, p.review_count DESC, p.id DESC
-		LIMIT $2`
+		  AND p.review_count > 0`
 
-	rows, err := r.db.Query(ctx, q, product.StatusActive, limit)
-	if err != nil {
-		return nil, fmt.Errorf("get highly rated candidates: %w", err)
-	}
-	defer rows.Close()
-
-	return scanCandidatesWithSignals(rows, "rating_score", "review_count")
+	return r.runFilteredCandidateQuery(ctx, req, candidateQuery{
+		query:   q,
+		args:    []any{product.StatusActive},
+		orderBy: "ranked.rating_score DESC, ranked.review_count DESC, ranked.product_id DESC",
+		signals: []string{"rating_score", "review_count"},
+	}, "get highly rated candidates")
 }
 
-func (r *DiscoveryRepository) getMostWishlistedCandidates(ctx context.Context, limit int) ([]discovery.Candidate, error) {
+func (r *DiscoveryRepository) getMostWishlistedCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const q = `
 		SELECT p.id,
 		       COUNT(*)::DOUBLE PRECISION AS wishlist_count
 		FROM wishlist_items wi
 		JOIN products p ON p.id = wi.product_id
 		WHERE p.status = $1
-		GROUP BY p.id
-		ORDER BY COUNT(*) DESC, p.id DESC
-		LIMIT $2`
+		GROUP BY p.id`
 
-	rows, err := r.db.Query(ctx, q, product.StatusActive, limit)
-	if err != nil {
-		return nil, fmt.Errorf("get most wishlisted candidates: %w", err)
-	}
-	defer rows.Close()
-
-	return scanCandidatesWithSignals(rows, "wishlist_count")
+	return r.runFilteredCandidateQuery(ctx, req, candidateQuery{
+		query:   q,
+		args:    []any{product.StatusActive},
+		orderBy: "ranked.wishlist_count DESC, ranked.product_id DESC",
+		signals: []string{"wishlist_count"},
+	}, "get most wishlisted candidates")
 }
 
-func (r *DiscoveryRepository) getAlsoViewedCandidates(ctx context.Context, userID *int64, sessionID *string, limit int) ([]discovery.Candidate, error) {
+func (r *DiscoveryRepository) getAlsoViewedCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const qTemplate = `
 		WITH recent_products AS (
 			SELECT product_id
@@ -550,59 +527,50 @@ func (r *DiscoveryRepository) getAlsoViewedCandidates(ctx context.Context, userI
 		      FROM recent_products rp
 		      WHERE rp.product_id = p.id
 		  )
-			ORDER BY
-			cvp.co_view_score DESC,
-			COALESCE(pm.weekly_views, 0)::DOUBLE PRECISION DESC,
-			COALESCE(pm.conversion_rate, 0)::DOUBLE PRECISION DESC,
-			p.id DESC
-		LIMIT $4`
+		`
 
 	filterCondition := "pe.user_id = $2"
 	filterValue := any(nil)
-	if userID != nil {
-		filterValue = *userID
+	if req.UserID != nil {
+		filterValue = *req.UserID
 	} else {
 		filterCondition = "pe.session_id = $2"
-		filterValue = *sessionID
+		filterValue = *req.SessionID
 	}
 
-	rows, err := r.db.Query(
-		ctx,
-		fmt.Sprintf(qTemplate, filterCondition),
-		product.StatusActive,
-		filterValue,
-		recentInteractionLimit,
-		limit,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("get also viewed candidates: %w", err)
-	}
-	defer rows.Close()
-
-	return scanCandidatesWithSignals(rows, "co_view_score", "popularity_score", "conversion_rate")
+	return r.runFilteredCandidateQuery(ctx, req, candidateQuery{
+		query: fmt.Sprintf(qTemplate, filterCondition),
+		args: []any{
+			product.StatusActive,
+			filterValue,
+			recentInteractionLimit,
+		},
+		orderBy: `ranked.co_view_score DESC,
+			ranked.popularity_score DESC,
+			ranked.conversion_rate DESC,
+			ranked.product_id DESC`,
+		signals: []string{"co_view_score", "popularity_score", "conversion_rate"},
+	}, "get also viewed candidates")
 }
 
-func (r *DiscoveryRepository) getFeaturedCandidates(ctx context.Context, limit int) ([]discovery.Candidate, error) {
+func (r *DiscoveryRepository) getFeaturedCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const q = `
 		SELECT p.id,
 		       1.0::DOUBLE PRECISION AS merchandising_score,
 		       EXTRACT(EPOCH FROM p.created_at)::DOUBLE PRECISION AS freshness_score
 		FROM products p
 		WHERE p.status = $1
-		  AND p.is_featured = TRUE
-		ORDER BY p.created_at DESC, p.id DESC
-		LIMIT $2`
+		  AND p.is_featured = TRUE`
 
-	rows, err := r.db.Query(ctx, q, product.StatusActive, limit)
-	if err != nil {
-		return nil, fmt.Errorf("get featured candidates: %w", err)
-	}
-	defer rows.Close()
-
-	return scanCandidatesWithSignals(rows, "merchandising_score", "freshness_score")
+	return r.runFilteredCandidateQuery(ctx, req, candidateQuery{
+		query:   q,
+		args:    []any{product.StatusActive},
+		orderBy: "ranked.freshness_score DESC, ranked.product_id DESC",
+		signals: []string{"merchandising_score", "freshness_score"},
+	}, "get featured candidates")
 }
 
-func (r *DiscoveryRepository) getSearchCandidates(ctx context.Context, query string, limit int) ([]discovery.Candidate, error) {
+func (r *DiscoveryRepository) getSearchCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const q = `
 		WITH search_input AS (
 			SELECT LOWER($1) AS normalized_query,
@@ -651,35 +619,202 @@ func (r *DiscoveryRepository) getSearchCandidates(ctx context.Context, query str
 		       COALESCE(pm.trending_score, 0)::DOUBLE PRECISION AS trending_score
 		FROM ranked r
 		JOIN products p ON p.id = r.product_id
-		LEFT JOIN product_metrics pm ON pm.product_id = r.product_id
-		ORDER BY
-			($4 * r.text_relevance)
-			+ ($5 * COALESCE(pm.weekly_purchases, 0)::DOUBLE PRECISION)
-			+ ($6 * COALESCE(pm.conversion_rate, 0)::DOUBLE PRECISION)
-			+ ($7 * p.rating::DOUBLE PRECISION)
-			+ ($8 * COALESCE(pm.trending_score, 0)::DOUBLE PRECISION) DESC,
-			r.product_id DESC
-		LIMIT $9`
+		LEFT JOIN product_metrics pm ON pm.product_id = r.product_id`
 
-	rows, err := r.db.Query(
-		ctx,
-		q,
-		query,
-		product.StatusActive,
-		defaultSearchTextConfig,
-		searchTextWeight,
-		searchPopularityWeight,
-		searchConversionWeight,
-		searchRatingWeight,
-		searchTrendingWeight,
-		limit,
+	return r.runFilteredCandidateQuery(ctx, req, candidateQuery{
+		query: q,
+		args: []any{
+			*req.Query,
+			product.StatusActive,
+			defaultSearchTextConfig,
+			searchTextWeight,
+			searchPopularityWeight,
+			searchConversionWeight,
+			searchRatingWeight,
+			searchTrendingWeight,
+		},
+		orderBy: `(($4 * ranked.text_relevance)
+			+ ($5 * ranked.popularity_score)
+			+ ($6 * ranked.conversion_rate)
+			+ ($7 * ranked.rating_score)
+			+ ($8 * ranked.trending_score)) DESC,
+			ranked.product_id DESC`,
+		signals: []string{"text_relevance", "popularity_score", "conversion_rate", "rating_score", "trending_score"},
+	}, "get search candidates")
+}
+
+func (r *DiscoveryRepository) runFilteredCandidateQuery(ctx context.Context, req *discovery.FeedRequest, candidate candidateQuery, operation string) ([]discovery.Candidate, error) {
+	filterCTE := buildEligibleProductsCTE(len(candidate.args) + 1)
+	filterArgs := buildEligibleProductsArgs(req.Filters)
+	selectedColumns := []string{"ranked.product_id"}
+	for _, signal := range candidate.signals {
+		selectedColumns = append(selectedColumns, "ranked."+signal)
+	}
+
+	limitPosition := len(candidate.args) + len(filterArgs) + 1
+	query := fmt.Sprintf(`
+		WITH %s,
+		ranked AS (
+			%s
+		)
+		SELECT %s
+		FROM ranked
+		JOIN eligible_products ep ON ep.product_id = ranked.product_id
+		ORDER BY %s
+		LIMIT $%d`,
+		filterCTE,
+		candidate.query,
+		strings.Join(selectedColumns, ",\n\t       "),
+		candidate.orderBy,
+		limitPosition,
 	)
+
+	args := append([]any{}, candidate.args...)
+	args = append(args, buildEligibleProductsArgs(req.Filters)...)
+	args = append(args, req.Limit)
+
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
-		return nil, fmt.Errorf("get search candidates: %w", err)
+		return nil, fmt.Errorf("%s: %w", operation, err)
 	}
 	defer rows.Close()
 
-	return scanCandidatesWithSignals(rows, "text_relevance", "popularity_score", "conversion_rate", "rating_score", "trending_score")
+	return scanCandidatesWithSignals(rows, candidate.signals...)
+}
+
+func buildEligibleProductsArgs(filters discovery.FeedFilter) []any {
+	return []any{
+		filters.BrandIDs,
+		filters.TagIDs,
+		filters.PriceMin,
+		filters.PriceMax,
+		filters.MinRating,
+		filters.DiscountOnly,
+		filters.InStockOnly,
+		filters.VariantAttributeValueIDs,
+	}
+}
+
+func buildEligibleProductsCTE(startArg int) string {
+	brandArg := startArg
+	tagArg := startArg + 1
+	priceMinArg := startArg + 2
+	priceMaxArg := startArg + 3
+	minRatingArg := startArg + 4
+	discountOnlyArg := startArg + 5
+	inStockOnlyArg := startArg + 6
+	variantAttributeArg := startArg + 7
+
+	effectivePriceExpr := "ROUND((p.base_price * (1 - (COALESCE(bd.discount_percent, 0) / 100.0)))::NUMERIC, 2)::DOUBLE PRECISION"
+
+	sql := fmt.Sprintf(`
+		active_discounts AS (
+			SELECT d.id, d.discount_type, d.value
+			FROM discounts d
+			WHERE d.is_active = TRUE
+			  AND (d.starts_at IS NULL OR d.starts_at <= NOW())
+			  AND (d.ends_at IS NULL OR d.ends_at >= NOW())
+		),
+		discount_candidates AS (
+			SELECT p.id AS product_id,
+				COALESCE(CASE
+					WHEN ad.discount_type = 'percentage' THEN ad.value::DOUBLE PRECISION
+					ELSE ((ad.value / NULLIF(p.base_price, 0)) * 100)::DOUBLE PRECISION
+				END, 0)::DOUBLE PRECISION AS discount_percent
+			FROM products p
+			JOIN discount_targets dt
+			  ON dt.target_type = 'product'
+			 AND dt.target_id = p.id
+			JOIN active_discounts ad ON ad.id = dt.discount_id
+			WHERE p.status = '%s'
+
+			UNION ALL
+
+			SELECT p.id AS product_id,
+				COALESCE(CASE
+					WHEN ad.discount_type = 'percentage' THEN ad.value::DOUBLE PRECISION
+					ELSE ((ad.value / NULLIF(p.base_price, 0)) * 100)::DOUBLE PRECISION
+				END, 0)::DOUBLE PRECISION AS discount_percent
+			FROM products p
+			JOIN discount_targets dt
+			  ON dt.target_type = 'brand'
+			 AND dt.target_id = p.brand_id
+			JOIN active_discounts ad ON ad.id = dt.discount_id
+			WHERE p.status = '%s'
+
+			UNION ALL
+
+			SELECT p.id AS product_id,
+				COALESCE(CASE
+					WHEN ad.discount_type = 'percentage' THEN ad.value::DOUBLE PRECISION
+					ELSE ((ad.value / NULLIF(p.base_price, 0)) * 100)::DOUBLE PRECISION
+				END, 0)::DOUBLE PRECISION AS discount_percent
+			FROM products p
+			JOIN product_category_map pcm ON pcm.product_id = p.id
+			JOIN discount_targets dt
+			  ON dt.target_type = 'category'
+			 AND dt.target_id = pcm.category_id
+			JOIN active_discounts ad ON ad.id = dt.discount_id
+			WHERE p.status = '%s'
+		),
+		best_discounts AS (
+			SELECT dc.product_id,
+			       COALESCE(MAX(dc.discount_percent), 0)::DOUBLE PRECISION AS discount_percent
+			FROM discount_candidates dc
+			GROUP BY dc.product_id
+		),
+		inventory_summary AS (
+			SELECT pv.product_id,
+			       COALESCE(SUM(ii.available_qty - ii.reserved_qty), 0) AS available_inventory
+			FROM product_variants pv
+			LEFT JOIN inventory_items ii ON ii.variant_id = pv.id
+			WHERE pv.is_active = TRUE
+			GROUP BY pv.product_id
+		),
+		eligible_products AS (
+			SELECT p.id AS product_id
+			FROM products p
+			LEFT JOIN inventory_summary inv ON inv.product_id = p.id
+			LEFT JOIN best_discounts bd ON bd.product_id = p.id
+			WHERE p.status = '%s'
+			  AND (NOT $%d::BOOLEAN OR COALESCE(inv.available_inventory, 0) > 0)
+			  AND (COALESCE(cardinality($%d::BIGINT[]), 0) = 0 OR p.brand_id = ANY($%d::BIGINT[]))
+			  AND ($%d::DOUBLE PRECISION IS NULL OR %s >= $%d::DOUBLE PRECISION)
+			  AND ($%d::DOUBLE PRECISION IS NULL OR %s <= $%d::DOUBLE PRECISION)
+			  AND (COALESCE(cardinality($%d::BIGINT[]), 0) = 0 OR EXISTS (
+			  	SELECT 1
+			  	FROM product_tags pt
+			  	WHERE pt.product_id = p.id
+			  	  AND pt.tag_id = ANY($%d::BIGINT[])
+			  ))
+			  AND ($%d::DOUBLE PRECISION IS NULL OR p.rating::DOUBLE PRECISION >= $%d::DOUBLE PRECISION)
+			  AND (NOT $%d::BOOLEAN OR COALESCE(bd.discount_percent, 0) > 0)
+			  AND (COALESCE(cardinality($%d::BIGINT[]), 0) = 0 OR EXISTS (
+			  	SELECT 1
+			  	FROM product_variants pv
+			  	JOIN variant_attribute_values vav ON vav.variant_id = pv.id
+			  	WHERE pv.product_id = p.id
+			  	  AND pv.is_active = TRUE
+			  	  AND vav.attribute_value_id = ANY($%d::BIGINT[])
+			  	GROUP BY pv.id
+			  	HAVING COUNT(DISTINCT vav.attribute_value_id) = cardinality($%d::BIGINT[])
+			  ))
+		)`,
+		product.StatusActive,
+		product.StatusActive,
+		product.StatusActive,
+		product.StatusActive,
+		inStockOnlyArg,
+		brandArg, brandArg,
+		priceMinArg, effectivePriceExpr, priceMinArg,
+		priceMaxArg, effectivePriceExpr, priceMaxArg,
+		tagArg, tagArg,
+		minRatingArg, minRatingArg,
+		discountOnlyArg,
+		variantAttributeArg, variantAttributeArg, variantAttributeArg,
+	)
+
+	return sql
 }
 
 func (r *DiscoveryRepository) Suggest(ctx context.Context, req *discovery.SuggestRequest) ([]discovery.Suggestion, error) {

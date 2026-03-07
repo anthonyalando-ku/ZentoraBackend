@@ -85,6 +85,39 @@ func TestGetFeedCandidatesUsesAuthenticatedIdentity(t *testing.T) {
 	}
 }
 
+func TestGetFeedParsesSharedFilters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	discoverySvc := &stubDiscoveryService{
+		feedResult: []discoverydomain.ProductCard{{ProductID: 11, Name: "Phone"}},
+	}
+	handler := NewHandler(discoverySvc, &stubMetricsRunner{})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/discovery/feed?feed_type=trending&brand_ids=3,1&tag_ids=8,5&variant_attribute_value_ids=21,13&price_min=10&price_max=99.99&min_rating=4&discount_only=true&in_stock_only=true",
+		nil,
+	)
+	ctx.Request = req
+
+	handler.GetFeedCandidates(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if discoverySvc.feedReq == nil {
+		t.Fatal("expected feed request to be passed to service")
+	}
+	if len(discoverySvc.feedReq.Filters.VariantAttributeValueIDs) != 2 {
+		t.Fatalf("variant attribute ids = %#v, want parsed ids", discoverySvc.feedReq.Filters.VariantAttributeValueIDs)
+	}
+	if !discoverySvc.feedReq.Filters.DiscountOnly || !discoverySvc.feedReq.Filters.InStockOnly {
+		t.Fatalf("filters = %#v, want discount and stock filters enabled", discoverySvc.feedReq.Filters)
+	}
+}
+
 func TestTrackSearchUsesAuthenticatedIdentity(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

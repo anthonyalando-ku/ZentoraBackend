@@ -108,6 +108,73 @@ func TestFeedRequestValidateRejectsUnknownFeedType(t *testing.T) {
 	}
 }
 
+func TestFeedRequestValidateNormalizesFilterIDs(t *testing.T) {
+	req := &FeedRequest{
+		FeedType: FeedTrending,
+		Filters: FeedFilter{
+			BrandIDs:                 []int64{3, 1, 3},
+			TagIDs:                   []int64{5, 2, 5},
+			VariantAttributeValueIDs: []int64{9, 4, 9},
+		},
+	}
+
+	if err := req.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if got, want := len(req.Filters.BrandIDs), 2; got != want {
+		t.Fatalf("brand ids len = %d, want %d", got, want)
+	}
+	if req.Filters.BrandIDs[0] != 1 || req.Filters.BrandIDs[1] != 3 {
+		t.Fatalf("brand ids = %#v, want sorted unique ids", req.Filters.BrandIDs)
+	}
+	if req.Filters.VariantAttributeValueIDs[0] != 4 || req.Filters.VariantAttributeValueIDs[1] != 9 {
+		t.Fatalf("variant attribute ids = %#v, want sorted unique ids", req.Filters.VariantAttributeValueIDs)
+	}
+}
+
+func TestFeedRequestValidateRejectsInvalidFilterIDs(t *testing.T) {
+	req := &FeedRequest{
+		FeedType: FeedTrending,
+		Filters: FeedFilter{
+			VariantAttributeValueIDs: []int64{1, 0},
+		},
+	}
+
+	if err := req.Validate(); err != ErrInvalidFilterID {
+		t.Fatalf("Validate() error = %v, want %v", err, ErrInvalidFilterID)
+	}
+}
+
+func TestFeedRequestValidateRejectsInvalidPriceRange(t *testing.T) {
+	minPrice := 100.0
+	maxPrice := 50.0
+	req := &FeedRequest{
+		FeedType: FeedTrending,
+		Filters: FeedFilter{
+			PriceMin: &minPrice,
+			PriceMax: &maxPrice,
+		},
+	}
+
+	if err := req.Validate(); err != ErrInvalidPriceRange {
+		t.Fatalf("Validate() error = %v, want %v", err, ErrInvalidPriceRange)
+	}
+}
+
+func TestFeedRequestValidateRejectsInvalidMinRating(t *testing.T) {
+	minRating := 5.5
+	req := &FeedRequest{
+		FeedType: FeedTrending,
+		Filters: FeedFilter{
+			MinRating: &minRating,
+		},
+	}
+
+	if err := req.Validate(); err != ErrInvalidRatingFilter {
+		t.Fatalf("Validate() error = %v, want %v", err, ErrInvalidRatingFilter)
+	}
+}
+
 func TestSuggestRequestValidateDefaultsLimitAndTrimsPrefix(t *testing.T) {
 	req := &SuggestRequest{Prefix: "  elec  "}
 

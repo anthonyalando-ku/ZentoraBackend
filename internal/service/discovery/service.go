@@ -199,6 +199,7 @@ func buildFeedCacheKey(req *discoverydomain.FeedRequest) string {
 
 	appendIDs("brands", req.Filters.BrandIDs)
 	appendIDs("tags", req.Filters.TagIDs)
+	appendIDs("variant_attribute_values", req.Filters.VariantAttributeValueIDs)
 	if req.Filters.PriceMin != nil {
 		parts = append(parts, "price_min="+formatCacheFloat(*req.Filters.PriceMin))
 	}
