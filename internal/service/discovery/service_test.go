@@ -10,14 +10,21 @@ import (
 )
 
 type stubCandidateRepository struct {
-	called        bool
-	req           *discoverydomain.FeedRequest
-	result        []discoverydomain.Candidate
-	err           error
-	suggestCalled bool
-	suggestReq    *discoverydomain.SuggestRequest
-	suggestResult []discoverydomain.Suggestion
-	suggestErr    error
+	called            bool
+	req               *discoverydomain.FeedRequest
+	result            []discoverydomain.Candidate
+	err               error
+	suggestCalled     bool
+	suggestReq        *discoverydomain.SuggestRequest
+	suggestResult     []discoverydomain.Suggestion
+	suggestErr        error
+	searchEventCalled bool
+	searchEvent       *discoverydomain.SearchEvent
+	searchEventID     int64
+	searchEventErr    error
+	searchClickCalled bool
+	searchClick       *discoverydomain.SearchClickEvent
+	searchClickErr    error
 }
 
 func (s *stubCandidateRepository) GetFeedCandidates(_ context.Context, req *discoverydomain.FeedRequest) ([]discoverydomain.Candidate, error) {
@@ -30,6 +37,18 @@ func (s *stubCandidateRepository) Suggest(_ context.Context, req *discoverydomai
 	s.suggestCalled = true
 	s.suggestReq = req
 	return s.suggestResult, s.suggestErr
+}
+
+func (s *stubCandidateRepository) TrackSearch(_ context.Context, event *discoverydomain.SearchEvent) (int64, error) {
+	s.searchEventCalled = true
+	s.searchEvent = event
+	return s.searchEventID, s.searchEventErr
+}
+
+func (s *stubCandidateRepository) TrackSearchClick(_ context.Context, event *discoverydomain.SearchClickEvent) error {
+	s.searchClickCalled = true
+	s.searchClick = event
+	return s.searchClickErr
 }
 
 type stubCategoryRepository struct {
@@ -165,5 +184,72 @@ func TestDiscoveryServiceSuggestDelegatesToRepository(t *testing.T) {
 	}
 	if len(got) != len(expected) || got[0].Text != expected[0].Text {
 		t.Fatalf("Suggest() = %#v, want %#v", got, expected)
+	}
+}
+
+func TestDiscoveryServiceTrackSearchValidatesRequest(t *testing.T) {
+	svc := NewDiscoveryService(&stubCandidateRepository{}, &stubCategoryRepository{})
+
+	_, err := svc.TrackSearch(context.Background(), &discoverydomain.SearchEvent{Query: "   "})
+	if !errors.Is(err, discoverydomain.ErrQueryRequired) {
+		t.Fatalf("TrackSearch() error = %v, want %v", err, discoverydomain.ErrQueryRequired)
+	}
+}
+
+func TestDiscoveryServiceTrackSearchDelegatesToRepository(t *testing.T) {
+	candidateRepo := &stubCandidateRepository{searchEventID: 99}
+	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{})
+
+	eventID, err := svc.TrackSearch(context.Background(), &discoverydomain.SearchEvent{
+		Query:       "  Earbuds  ",
+		ResultCount: 1,
+		Results: []discoverydomain.SearchResultPosition{
+			{ProductID: 4, Position: 1, Score: 0.8},
+		},
+	})
+	if err != nil {
+		t.Fatalf("TrackSearch() error = %v", err)
+	}
+	if !candidateRepo.searchEventCalled {
+		t.Fatal("expected search tracking repository method to be called")
+	}
+	if candidateRepo.searchEvent == nil || candidateRepo.searchEvent.NormalizedQuery != "earbuds" {
+		t.Fatalf("repository search event = %#v, want normalized query earbuds", candidateRepo.searchEvent)
+	}
+	if eventID != 99 {
+		t.Fatalf("TrackSearch() eventID = %d, want %d", eventID, 99)
+	}
+}
+
+func TestDiscoveryServiceTrackSearchClickValidatesRequest(t *testing.T) {
+	svc := NewDiscoveryService(&stubCandidateRepository{}, &stubCategoryRepository{})
+
+	err := svc.TrackSearchClick(context.Background(), &discoverydomain.SearchClickEvent{
+		SearchEventID: 1,
+		ProductID:     0,
+		Position:      1,
+	})
+	if !errors.Is(err, discoverydomain.ErrInvalidProductID) {
+		t.Fatalf("TrackSearchClick() error = %v, want %v", err, discoverydomain.ErrInvalidProductID)
+	}
+}
+
+func TestDiscoveryServiceTrackSearchClickDelegatesToRepository(t *testing.T) {
+	candidateRepo := &stubCandidateRepository{}
+	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{})
+
+	err := svc.TrackSearchClick(context.Background(), &discoverydomain.SearchClickEvent{
+		SearchEventID: 10,
+		ProductID:     5,
+		Position:      2,
+	})
+	if err != nil {
+		t.Fatalf("TrackSearchClick() error = %v", err)
+	}
+	if !candidateRepo.searchClickCalled {
+		t.Fatal("expected search click repository method to be called")
+	}
+	if candidateRepo.searchClick == nil || candidateRepo.searchClick.Position != 2 {
+		t.Fatalf("repository search click = %#v, want position 2", candidateRepo.searchClick)
 	}
 }

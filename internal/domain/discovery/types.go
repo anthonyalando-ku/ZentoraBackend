@@ -132,3 +132,96 @@ type Suggestion struct {
 	ReferenceID     *int64
 	PopularityScore float64
 }
+
+type SearchResultPosition struct {
+	ProductID int64
+	Position  int
+	Score     float64
+}
+
+type SearchEvent struct {
+	Query           string
+	NormalizedQuery string
+	UserID          *int64
+	SessionID       *string
+	ResultCount     int
+	Results         []SearchResultPosition
+}
+
+func (e *SearchEvent) Validate() error {
+	if e == nil {
+		return ErrInvalidRequest
+	}
+
+	e.Query = strings.TrimSpace(e.Query)
+	if e.Query == "" {
+		return ErrQueryRequired
+	}
+	e.NormalizedQuery = strings.ToLower(e.Query)
+
+	if e.UserID != nil && *e.UserID <= 0 {
+		return ErrInvalidUserID
+	}
+
+	if e.SessionID != nil {
+		trimmed := strings.TrimSpace(*e.SessionID)
+		if trimmed == "" {
+			e.SessionID = nil
+		} else {
+			e.SessionID = &trimmed
+		}
+	}
+
+	if e.ResultCount < 0 {
+		return ErrNegativeResultCount
+	}
+
+	for _, result := range e.Results {
+		if result.ProductID <= 0 {
+			return ErrInvalidProductID
+		}
+		if result.Position <= 0 {
+			return ErrInvalidPosition
+		}
+	}
+
+	return nil
+}
+
+type SearchClickEvent struct {
+	SearchEventID int64
+	ProductID     int64
+	Position      int
+	UserID        *int64
+	SessionID     *string
+}
+
+func (e *SearchClickEvent) Validate() error {
+	if e == nil {
+		return ErrInvalidRequest
+	}
+
+	if e.SearchEventID <= 0 {
+		return ErrInvalidSearchEvent
+	}
+	if e.ProductID <= 0 {
+		return ErrInvalidProductID
+	}
+	if e.Position <= 0 {
+		return ErrInvalidPosition
+	}
+	if e.UserID != nil && *e.UserID <= 0 {
+		return ErrInvalidUserID
+	}
+
+	if e.SessionID != nil {
+		trimmed := strings.TrimSpace(*e.SessionID)
+		if trimmed == "" {
+			e.SessionID = nil
+		} else {
+			e.SessionID = &trimmed
+		}
+	}
+
+	return nil
+}

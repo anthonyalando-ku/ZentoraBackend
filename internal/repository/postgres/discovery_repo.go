@@ -471,6 +471,80 @@ func (r *DiscoveryRepository) Suggest(ctx context.Context, req *discovery.Sugges
 	return suggestions, nil
 }
 
+func (r *DiscoveryRepository) TrackSearch(ctx context.Context, event *discovery.SearchEvent) (int64, error) {
+	if err := event.Validate(); err != nil {
+		return 0, err
+	}
+
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("begin search tracking transaction: %w", err)
+	}
+
+	var eventID int64
+	if err := withTx(ctx, tx, func() error {
+		const insertEvent = `
+			INSERT INTO search_events (query, normalized_query, user_id, session_id, result_count)
+			VALUES ($1, $2, $3, $4, $5)
+			RETURNING id`
+
+		if err := tx.QueryRow(
+			ctx,
+			insertEvent,
+			event.Query,
+			event.NormalizedQuery,
+			event.UserID,
+			event.SessionID,
+			event.ResultCount,
+		).Scan(&eventID); err != nil {
+			return fmt.Errorf("insert search event: %w", err)
+		}
+
+		if len(event.Results) == 0 {
+			return nil
+		}
+
+		const insertPosition = `
+			INSERT INTO search_result_positions (search_event_id, product_id, position, score)
+			VALUES ($1, $2, $3, $4)`
+
+		var batch pgx.Batch
+		for _, result := range event.Results {
+			batch.Queue(insertPosition, eventID, result.ProductID, result.Position, result.Score)
+		}
+
+		results := tx.SendBatch(ctx, &batch)
+		defer results.Close()
+
+		for range event.Results {
+			if _, err := results.Exec(); err != nil {
+				return fmt.Errorf("insert search result position: %w", err)
+			}
+		}
+
+		return nil
+	}); err != nil {
+		return 0, err
+	}
+
+	return eventID, nil
+}
+
+func (r *DiscoveryRepository) TrackSearchClick(ctx context.Context, event *discovery.SearchClickEvent) error {
+	if err := event.Validate(); err != nil {
+		return err
+	}
+
+	const q = `
+		INSERT INTO search_clicks (search_event_id, product_id, position, user_id, session_id)
+		VALUES ($1, $2, $3, $4, $5)`
+
+	if _, err := r.db.Exec(ctx, q, event.SearchEventID, event.ProductID, event.Position, event.UserID, event.SessionID); err != nil {
+		return fmt.Errorf("insert search click: %w", err)
+	}
+	return nil
+}
+
 func scanCandidatesWithSignals(rows pgx.Rows, signalNames ...string) ([]discovery.Candidate, error) {
 	var out []discovery.Candidate
 	for rows.Next() {

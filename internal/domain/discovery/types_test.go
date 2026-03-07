@@ -110,3 +110,74 @@ func TestSuggestRequestValidateRejectsBlankPrefix(t *testing.T) {
 		t.Fatalf("Validate() error = %v, want %v", err, ErrPrefixRequired)
 	}
 }
+
+func TestSearchEventValidateNormalizesQueryAndSession(t *testing.T) {
+	sessionID := "  session-1  "
+	req := &SearchEvent{
+		Query:       "  Wireless Earbuds  ",
+		SessionID:   &sessionID,
+		ResultCount: 2,
+		Results: []SearchResultPosition{
+			{ProductID: 1, Position: 1, Score: 0.9},
+		},
+	}
+
+	if err := req.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if req.Query != "Wireless Earbuds" {
+		t.Fatalf("Validate() query = %q, want %q", req.Query, "Wireless Earbuds")
+	}
+	if req.NormalizedQuery != "wireless earbuds" {
+		t.Fatalf("Validate() normalized query = %q, want %q", req.NormalizedQuery, "wireless earbuds")
+	}
+	if req.SessionID == nil || *req.SessionID != "session-1" {
+		t.Fatalf("Validate() session_id = %v, want session-1", req.SessionID)
+	}
+}
+
+func TestSearchEventValidateRejectsNegativeResultCount(t *testing.T) {
+	req := &SearchEvent{Query: "earbuds", ResultCount: -1}
+
+	if err := req.Validate(); err != ErrNegativeResultCount {
+		t.Fatalf("Validate() error = %v, want %v", err, ErrNegativeResultCount)
+	}
+}
+
+func TestSearchEventValidateRejectsInvalidResultPositionProductID(t *testing.T) {
+	req := &SearchEvent{
+		Query: "earbuds",
+		Results: []SearchResultPosition{
+			{ProductID: 0, Position: 1, Score: 0.4},
+		},
+	}
+
+	if err := req.Validate(); err != ErrInvalidProductID {
+		t.Fatalf("Validate() error = %v, want %v", err, ErrInvalidProductID)
+	}
+}
+
+func TestSearchClickEventValidateRejectsInvalidSearchEventID(t *testing.T) {
+	req := &SearchClickEvent{SearchEventID: 0, ProductID: 1, Position: 1}
+
+	if err := req.Validate(); err != ErrInvalidSearchEvent {
+		t.Fatalf("Validate() error = %v, want %v", err, ErrInvalidSearchEvent)
+	}
+}
+
+func TestSearchClickEventValidateTrimsBlankSessionToNil(t *testing.T) {
+	sessionID := "   "
+	req := &SearchClickEvent{
+		SearchEventID: 1,
+		ProductID:     2,
+		Position:      1,
+		SessionID:     &sessionID,
+	}
+
+	if err := req.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if req.SessionID != nil {
+		t.Fatalf("Validate() session_id = %v, want nil", req.SessionID)
+	}
+}
