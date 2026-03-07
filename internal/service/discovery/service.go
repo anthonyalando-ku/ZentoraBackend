@@ -200,13 +200,13 @@ func buildFeedCacheKey(req *discoverydomain.FeedRequest) string {
 	appendIDs("brands", req.Filters.BrandIDs)
 	appendIDs("tags", req.Filters.TagIDs)
 	if req.Filters.PriceMin != nil {
-		parts = append(parts, "price_min="+strconv.FormatFloat(*req.Filters.PriceMin, 'f', -1, 64))
+		parts = append(parts, "price_min="+formatCacheFloat(*req.Filters.PriceMin))
 	}
 	if req.Filters.PriceMax != nil {
-		parts = append(parts, "price_max="+strconv.FormatFloat(*req.Filters.PriceMax, 'f', -1, 64))
+		parts = append(parts, "price_max="+formatCacheFloat(*req.Filters.PriceMax))
 	}
 	if req.Filters.MinRating != nil {
-		parts = append(parts, "min_rating="+strconv.FormatFloat(*req.Filters.MinRating, 'f', -1, 64))
+		parts = append(parts, "min_rating="+formatCacheFloat(*req.Filters.MinRating))
 	}
 	if req.Filters.DiscountOnly {
 		parts = append(parts, "discount_only=true")
@@ -215,4 +215,8 @@ func buildFeedCacheKey(req *discoverydomain.FeedRequest) string {
 		parts = append(parts, "in_stock_only=true")
 	}
 	return strings.Join(parts, ":")
+}
+
+func formatCacheFloat(value float64) string {
+	return strconv.FormatFloat(value, 'f', 2, 64)
 }

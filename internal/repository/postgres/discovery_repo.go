@@ -114,10 +114,10 @@ func (r *DiscoveryRepository) HydrateProductCards(ctx context.Context, productID
 		),
 		discount_candidates AS (
 			SELECT p.id AS product_id,
-				CASE
+				COALESCE(CASE
 					WHEN ad.discount_type = 'percentage' THEN ad.value::DOUBLE PRECISION
 					ELSE ((ad.value / NULLIF(p.base_price, 0)) * 100)::DOUBLE PRECISION
-				END AS discount_percent
+				END, 0)::DOUBLE PRECISION AS discount_percent
 			FROM requested_products rp
 			JOIN products p ON p.id = rp.product_id
 			JOIN discount_targets dt
@@ -128,10 +128,10 @@ func (r *DiscoveryRepository) HydrateProductCards(ctx context.Context, productID
 			UNION ALL
 
 			SELECT p.id AS product_id,
-				CASE
+				COALESCE(CASE
 					WHEN ad.discount_type = 'percentage' THEN ad.value::DOUBLE PRECISION
 					ELSE ((ad.value / NULLIF(p.base_price, 0)) * 100)::DOUBLE PRECISION
-				END AS discount_percent
+				END, 0)::DOUBLE PRECISION AS discount_percent
 			FROM requested_products rp
 			JOIN products p ON p.id = rp.product_id
 			JOIN discount_targets dt
@@ -142,10 +142,10 @@ func (r *DiscoveryRepository) HydrateProductCards(ctx context.Context, productID
 			UNION ALL
 
 			SELECT p.id AS product_id,
-				CASE
+				COALESCE(CASE
 					WHEN ad.discount_type = 'percentage' THEN ad.value::DOUBLE PRECISION
 					ELSE ((ad.value / NULLIF(p.base_price, 0)) * 100)::DOUBLE PRECISION
-				END AS discount_percent
+				END, 0)::DOUBLE PRECISION AS discount_percent
 			FROM requested_products rp
 			JOIN products p ON p.id = rp.product_id
 			JOIN product_category_map pcm ON pcm.product_id = p.id
