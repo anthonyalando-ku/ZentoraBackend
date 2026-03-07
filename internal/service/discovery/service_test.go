@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"reflect"
 	"sort"
 	"testing"
@@ -125,9 +126,9 @@ func (r *featuredExecutionRepository) GetFeedCandidates(_ context.Context, req *
 		for _, sectionType := range product.homepageSectionTypes {
 			switch sectionType {
 			case "custom":
-				score = maxFloat(score, 1000)
+				score = math.Max(score, 1000)
 			case "featured":
-				score = maxFloat(score, 800)
+				score = math.Max(score, 800)
 			}
 		}
 
@@ -252,13 +253,6 @@ func containsAllInt64(values []int64, targets []int64) bool {
 		}
 	}
 	return true
-}
-
-func maxFloat(left, right float64) float64 {
-	if right > left {
-		return right
-	}
-	return left
 }
 
 func assertInt64SliceEqual(t *testing.T, got, want []int64, message string) {
