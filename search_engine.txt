@@ -1,0 +1,367 @@
+You are a senior search and recommendation systems engineer.
+
+I am building a production-grade e-commerce platform called Zentora.
+
+The PostgreSQL database already exists and authentication is already implemented using the table `auth_identities`.
+
+The platform is similar to Amazon or Jumia.
+
+I will attach the current database schema after this prompt. You must use the schema to design the system correctly and propose improvements if necessary.
+
+We are building this system step-by-step, starting with the PRODUCT DISCOVERY ENGINE.
+
+This engine will power:
+
+• Homepage product sections
+• Category browsing
+• Product search
+• Search autosuggestions
+• Personalized recommendations
+• Trending products
+• Deals and promotions
+• Product discovery feeds
+
+The system must work for:
+
+1. Anonymous users
+2. New registered users
+3. Returning users
+
+---
+
+DATABASE SIGNAL SOURCES
+
+PRODUCT DATA
+- products
+- product_variants
+- product_images
+- product_category_map
+- product_tags
+- product_brands
+
+CATEGORY STRUCTURE
+- product_categories
+- category_closure
+
+INVENTORY
+- inventory_items
+
+PRICING & DISCOUNTS
+- products.base_price
+- discounts
+- discount_targets
+- discount_redemptions
+
+USER INTERACTION EVENTS
+- product_events (view, add_to_cart, purchase)
+
+USER BEHAVIOR
+- wishlist_items
+- order_items
+- user_category_affinity
+
+QUALITY SIGNALS
+- reviews
+- products.rating
+- products.review_count
+
+PRECOMPUTED METRICS
+- product_metrics
+  - trending_score
+  - daily_views
+  - weekly_views
+  - weekly_purchases
+  - conversion_rate
+
+SIMILARITY DATA
+- product_co_views
+
+MERCHANDISING
+- products.is_featured
+- homepage_sections
+- banners
+
+SEARCH DATA
+- search_events (query logs)
+- search_clicks
+- search_result_positions
+
+---
+
+THE SYSTEM MUST SUPPORT TWO MAJOR DISCOVERY FLOWS
+
+1) PRODUCT FEEDS
+2) SEARCH
+
+---
+
+PART 1 — PRODUCT RETRIEVAL ENGINE
+
+The retrieval engine must generate different feeds such as:
+
+1. Trending products
+2. Best sellers
+3. Personalized recommendations
+4. Customers also viewed
+5. High discount products
+6. Highly rated products
+7. New arrivals
+8. Most wishlisted products
+9. Frequently bought together
+10. Category popular products
+11. In-stock/high inventory products
+12. Featured products
+13. Editorial picks
+
+Homepage sections like:
+
+• Trending
+• Recommended for you
+• Electronics
+• Fashion
+• Deals
+• New arrivals
+
+must be powered by this engine.
+
+The engine must support dynamic filters such as:
+
+- user_id
+- session_id
+- category_id
+- brand_id
+- tags
+- price_range
+- rating
+- discount presence
+- inventory availability
+- variant attributes (size, color, etc)
+
+Category navigation must use the `category_closure` hierarchy.
+
+Example:
+
+If retrieving products for category "Electronics", the system must return products from:
+
+Electronics + all descendant categories.
+
+---
+
+PART 2 — SEARCH ENGINE
+
+The platform must support product search.
+
+Search should match against:
+
+• product name
+• product description
+• tags
+• brand
+• category names
+
+Search must support:
+
+- partial matches
+- prefix matches
+- typo tolerance
+- ranking based on relevance
+
+Search ranking should combine:
+
+• text relevance
+• popularity
+• conversion rate
+• rating
+• sales
+• trending_score
+
+Example ranking formula:
+
+SearchScore =
+0.50 * text_relevance
++ 0.20 * popularity_score
++ 0.15 * conversion_rate
++ 0.10 * rating_score
++ 0.05 * trending_score
+
+---
+
+PART 3 — SEARCH AUTOSUGGEST
+
+When a user types a query like:
+
+"elec"
+
+The system should suggest:
+
+• categories (Electronics)
+• products (Electric kettle, Electric fan)
+• brands
+• popular queries
+
+Autosuggestions must be based on:
+
+• product names
+• category names
+• brands
+• previous search queries
+• trending search terms
+
+Autosuggestion must be fast (<100ms).
+
+---
+
+PART 4 — SEARCH EVENT TRACKING
+
+Every search must log events into:
+
+search_events
+
+Data stored should include:
+
+- query
+- user_id
+- session_id
+- timestamp
+- result_count
+
+Clicks on results should be logged in:
+
+search_clicks
+
+This will later allow training better ranking models.
+
+---
+
+PART 5 — RETRIEVAL PIPELINE ARCHITECTURE
+
+The product discovery engine should follow a 3-stage pipeline.
+
+STAGE 1 — Candidate Retrieval
+
+Retrieve candidate products using signals such as:
+
+• trending_score
+• category affinity
+• purchase history
+• co-view similarity
+• discounts
+• ratings
+• featured flag
+• category popularity
+
+STAGE 2 — Filtering
+
+Filter by:
+
+• active status
+• inventory availability
+• category filters
+• user filters
+• variant availability
+
+STAGE 3 — Ranking
+
+Rank products using a weighted scoring model.
+
+Example scoring model:
+
+FinalScore =
+0.35 * personalization_score
++ 0.25 * trending_score
++ 0.15 * conversion_rate
++ 0.10 * rating_score
++ 0.10 * discount_score
++ 0.05 * freshness_score
+
+---
+
+PART 6 — PERSONALIZATION
+
+For returning users, personalization should consider:
+
+• previous views
+• purchases
+• wishlist items
+• category affinity
+• co-view similarity
+
+For new users:
+
+Use trending + category popularity.
+
+For anonymous users:
+
+Use trending + best sellers.
+
+---
+
+PART 7 — ENGINE INPUT PARAMETERS
+
+The engine should accept parameters like:
+
+feed_type
+user_id
+session_id
+category_id
+query
+limit
+filters
+
+Example feed types:
+
+"trending"
+"recommended"
+"category"
+"deals"
+"new_arrivals"
+"best_sellers"
+"search"
+
+---
+
+PART 8 — OUTPUT FORMAT
+
+The engine should return product objects ready for frontend display containing:
+
+• product_id
+• name
+• slug
+• primary_image
+• price
+• discount
+• rating
+• review_count
+• inventory_status
+• brand
+• category
+
+---
+
+IMPORTANT REQUIREMENT
+
+The system must be:
+
+• modular
+• reusable
+• highly performant
+• easy to extend with new ranking signals
+
+Different feeds must reuse the same retrieval engine.
+
+---
+
+TASKS
+
+Before writing any SQL or implementation:
+
+1. Explain the full architecture of the discovery engine
+2. Explain the retrieval pipeline
+3. Define ranking signals
+4. Explain personalization strategy
+5. Explain how search works
+6. Explain autosuggestion design
+7. Suggest indexes required for performance
+8. Suggest schema improvements if needed
+
+Only after the architecture is finalized should implementation begin.

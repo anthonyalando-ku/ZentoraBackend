@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"encoding/json"
 	"fmt"
 	"mime/multipart"
 	"net/http"
@@ -11,29 +12,40 @@ import (
 	"zentora-service/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 func (h *CatalogHandler) CreateProduct(c *gin.Context) {
-	var req productdomain.CreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "invalid request body", err)
-		return
-	}
+    // Get JSON string from form field
+    jsonData := c.PostForm("data")
+    if jsonData == "" {
+        response.Error(c, http.StatusBadRequest, "data field is required", nil)
+        return
+    }
 
-	files, err := parseImageFiles(c)
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, err.Error(), nil)
-		return
-	}
+    var req productdomain.CreateRequest
+    if err := json.Unmarshal([]byte(jsonData), &req); err != nil {
+        response.Error(c, http.StatusBadRequest, "invalid request body", err)
+        return
+    }
 
-	createdBy := middleware.MustGetIdentityID(c)
+    // Parse files
+    files, err := parseImageFiles(c)
+    if err != nil {
+        response.Error(c, http.StatusBadRequest, err.Error(), nil)
+        return
+    }
 
-	p, err := h.svc.CreateProduct(c.Request.Context(), &req, files, createdBy)
-	if err != nil {
-		handleError(c, err)
-		return
-	}
-	response.Success(c, http.StatusCreated, "product created", p)
+    createdBy := middleware.MustGetIdentityID(c)
+
+    p, err := h.svc.CreateProduct(c.Request.Context(), &req, files, createdBy)
+    if err != nil {
+		h.logger.Error("failed to create product", zap.Error(err))
+        handleError(c, err)
+        return
+    }
+
+    response.Success(c, http.StatusCreated, "product created", p)
 }
 
 func (h *CatalogHandler) GetProduct(c *gin.Context) {

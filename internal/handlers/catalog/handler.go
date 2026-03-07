@@ -19,16 +19,18 @@ import (
 	catalogSvc "zentora-service/internal/service/catalog"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 // CatalogHandler holds HTTP handlers for the catalog domain.
 type CatalogHandler struct {
 	svc *catalogSvc.CatalogService
+	logger *zap.Logger
 }
 
 // NewCatalogHandler creates a new CatalogHandler.
-func NewCatalogHandler(svc *catalogSvc.CatalogService) *CatalogHandler {
-	return &CatalogHandler{svc: svc}
+func NewCatalogHandler(svc *catalogSvc.CatalogService, logger *zap.Logger) *CatalogHandler {
+	return &CatalogHandler{svc: svc, logger: logger}
 }
 
 func parseID(c *gin.Context, param string) (int64, error) {

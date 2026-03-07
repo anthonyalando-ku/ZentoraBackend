@@ -658,3 +658,38 @@ func (r *AuthRepository) GetRoleByName(ctx context.Context, name string) (*auth.
 
 	return &role, nil
 }
+
+func (r *AuthRepository) SuperAdminExists(ctx context.Context) (bool, error) {
+	query := `
+		SELECT EXISTS(
+			SELECT 1 
+			FROM auth_identity_roles ir
+			JOIN auth_roles r ON ir.role_id = r.id
+			WHERE r.name = 'super_admin'
+		)
+	`
+	
+	var exists bool
+	err := r.db.QueryRow(ctx, query).Scan(&exists)
+	if err != nil {
+		return false, fmt.Errorf("failed to check super admin existence: %w", err)
+	}
+	
+	return exists, nil
+}
+
+// AssignRole assigns a role to a user
+func (r *AuthRepository) AssignRoleByName(ctx context.Context, identityID int64, roleName string) error {
+	query := `
+		INSERT INTO auth_identity_roles (identity_id, role_id)
+		SELECT $1, id FROM auth_roles WHERE name = $2
+		ON CONFLICT (identity_id, role_id) DO NOTHING
+	`
+	
+	_, err := r.db.Exec(ctx, query, identityID, roleName)
+	if err != nil {
+		return fmt.Errorf("failed to assign role: %w", err)
+	}
+	
+	return nil
+}

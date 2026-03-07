@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
+	"time"
 
 	"zentora-service/internal/config"
 	"zentora-service/internal/db"
@@ -34,12 +36,15 @@ import (
 type Server struct {
 	cfg    config.AppConfig
 	engine *gin.Engine
+	logger *zap.Logger
+	authService *authUsecase.AuthService
 }
 
 func NewServer() *Server {
 	cfg := config.Load()
 	engine := gin.Default()
-	return &Server{cfg: cfg, engine: engine}
+	logger, _ := zap.NewProduction()
+	return &Server{cfg: cfg, engine: engine, logger: logger}
 }
 
 func (s *Server) Start() error {
@@ -151,6 +156,7 @@ func (s *Server) Start() error {
 		redisClient,
 		logger,
 	)
+	s.authService = authService // Set authService in Server struct for later use
 
 	notifService := notifyUsecase.NewNotificationService(notifyRepo, hub)
 
@@ -168,11 +174,17 @@ func (s *Server) Start() error {
 
 	userService := userUsecase.NewUserService(userAddressRepo)
 
+	// ----- Initialize Super Admin -----
+	if err := s.initializeSuperAdmin(); err != nil {
+		logger.Error("failed to initialize super admin", zap.Error(err))
+		// Don't fail startup, just log the error
+	}
+
 	// ----- Handlers -----
 	authHandlerInst := authHandler.NewAuthHandler(authService, logger)
 	notifHandler := notifyH.NewNotificationHandler(notifService)
 	wsHandlerInst := wsHandler.NewWebSocketHandler(hub, logger)
-	catalogHandlerInst := catalogH.NewCatalogHandler(catalogService)
+	catalogHandlerInst := catalogH.NewCatalogHandler(catalogService, logger)
 	userHandlerInst := userH.NewUserHandler(userService)
 
 	// ----- Middlewares -----
@@ -198,4 +210,42 @@ func (s *Server) Start() error {
 	// ----- Start HTTP -----
 	log.Printf("🚀 Server running on %s", s.cfg.HTTPAddr)
 	return s.engine.Run(s.cfg.HTTPAddr)
+}
+
+// initializeSuperAdmin creates super admin if it doesn't exist
+func (s *Server) initializeSuperAdmin() error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Get super admin credentials from environment
+	email := os.Getenv("SUPER_ADMIN_EMAIL")
+	password := os.Getenv("SUPER_ADMIN_PASSWORD")
+	fullName := os.Getenv("SUPER_ADMIN_NAME")
+
+	// Use defaults if not provided (for development only)
+	if email == "" {
+		email = "admin@zentora.shop"
+		s.logger.Warn("SUPER_ADMIN_EMAIL not set, using default", zap.String("email", email))
+	}
+	if password == "" {
+		password = "HappyOwl58&" // Strong default
+		s.logger.Warn("SUPER_ADMIN_PASSWORD not set, using default password")
+	}
+	if fullName == "" {
+		fullName = "Super Administrator"
+		s.logger.Warn("SUPER_ADMIN_NAME not set, using default", zap.String("name", fullName))
+	}
+
+	// Validate password strength (optional but recommended)
+	if len(password) < 8 {
+		s.logger.Error("super admin password is too weak (minimum 8 characters)")
+		return fmt.Errorf("super admin password must be at least 8 characters")
+	}
+
+	// Create super admin
+	if err := s.authService.EnsureSuperAdminExists(ctx, email, password, fullName); err != nil {
+		return fmt.Errorf("failed to ensure super admin exists: %w", err)
+	}
+
+	return nil
 }
