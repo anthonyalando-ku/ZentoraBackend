@@ -43,15 +43,19 @@ func TestBuildEligibleProductsArgsIncludesVariantAttributeIDs(t *testing.T) {
 	}
 }
 
-func TestBuildEditorialCandidateQueryUsesHomepageSectionsSources(t *testing.T) {
+func TestBuildEditorialCandidateQueryUsesHomepageSections(t *testing.T) {
 	query := buildEditorialCandidateQuery()
 
 	expectedFragments := []string{
 		"homepage_sections",
-		"hs.type = 'custom'",
-		"hs.type = 'featured'",
-		"hs.type = 'category'",
-		"hs.type = 'trending'",
+		"custom_sections",
+		"featured_sections",
+		"category_sections",
+		"trending_sections",
+		"type = 'custom'",
+		"type = 'featured'",
+		"type = 'category'",
+		"type = 'trending'",
 		"product_metrics",
 		"category_closure",
 		"merchandising_score",
