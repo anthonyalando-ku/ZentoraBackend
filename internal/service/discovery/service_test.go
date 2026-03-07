@@ -152,6 +152,47 @@ func TestDiscoveryServiceGetFeedCandidatesSkipsCategoryLookupForNonCategoryFeed(
 	}
 }
 
+func TestDiscoveryServiceGetFeedCandidatesRequiresUserForRecommendedFeed(t *testing.T) {
+	candidateRepo := &stubCandidateRepository{}
+	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{})
+
+	_, err := svc.GetFeedCandidates(context.Background(), &discoverydomain.FeedRequest{
+		FeedType: discoverydomain.FeedRecommended,
+	})
+	if !errors.Is(err, discoverydomain.ErrUserRequired) {
+		t.Fatalf("GetFeedCandidates() error = %v, want %v", err, discoverydomain.ErrUserRequired)
+	}
+	if candidateRepo.called {
+		t.Fatal("expected discovery repository not to be called when recommended feed is invalid")
+	}
+}
+
+func TestDiscoveryServiceGetFeedCandidatesPassesAlsoViewedFeedToRepository(t *testing.T) {
+	sessionID := "  session-9  "
+	expected := []discoverydomain.Candidate{
+		{ProductID: 22, Signals: map[string]float64{"co_view_score": 0.7}},
+	}
+	candidateRepo := &stubCandidateRepository{result: expected}
+	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{})
+
+	got, err := svc.GetFeedCandidates(context.Background(), &discoverydomain.FeedRequest{
+		FeedType:  discoverydomain.FeedAlsoViewed,
+		SessionID: &sessionID,
+	})
+	if err != nil {
+		t.Fatalf("GetFeedCandidates() error = %v", err)
+	}
+	if !candidateRepo.called {
+		t.Fatal("expected discovery repository to be called")
+	}
+	if candidateRepo.req == nil || candidateRepo.req.SessionID == nil || *candidateRepo.req.SessionID != "session-9" {
+		t.Fatalf("repository request session_id = %#v, want %q", candidateRepo.req, "session-9")
+	}
+	if len(got) != len(expected) || got[0].ProductID != expected[0].ProductID {
+		t.Fatalf("GetFeedCandidates() = %#v, want %#v", got, expected)
+	}
+}
+
 func TestDiscoveryServiceSuggestValidatesRequest(t *testing.T) {
 	svc := NewDiscoveryService(&stubCandidateRepository{}, &stubCategoryRepository{})
 

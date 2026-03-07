@@ -17,13 +17,18 @@ type DiscoveryRepository struct {
 }
 
 const (
-	defaultSearchTextConfig = "simple"
-	searchTextWeight        = 0.50
-	searchPopularityWeight  = 0.20
-	searchConversionWeight  = 0.15
-	searchRatingWeight      = 0.10
-	searchTrendingWeight    = 0.05
-	suggestPrefixBoost      = 2.0
+	defaultSearchTextConfig     = "simple"
+	searchTextWeight            = 0.50
+	searchPopularityWeight      = 0.20
+	searchConversionWeight      = 0.15
+	searchRatingWeight          = 0.10
+	searchTrendingWeight        = 0.05
+	suggestPrefixBoost          = 2.0
+	recommendedAffinityWeight   = 0.55
+	recommendedCoViewWeight     = 0.25
+	recommendedConversionWeight = 0.10
+	recommendedTrendingWeight   = 0.10
+	recentInteractionLimit      = 20
 )
 
 func NewDiscoveryRepository(db *pgxpool.Pool) *DiscoveryRepository {
@@ -40,6 +45,8 @@ func (r *DiscoveryRepository) GetFeedCandidates(ctx context.Context, req *discov
 		return r.getTrendingCandidates(ctx, req.Limit)
 	case discovery.FeedBestSellers:
 		return r.getBestSellerCandidates(ctx, req.Limit)
+	case discovery.FeedRecommended:
+		return r.getRecommendedCandidates(ctx, *req.UserID, req.Limit)
 	case discovery.FeedCategory:
 		return r.getCategoryCandidates(ctx, *req.CategoryID, req.Limit)
 	case discovery.FeedDeals:
@@ -50,6 +57,8 @@ func (r *DiscoveryRepository) GetFeedCandidates(ctx context.Context, req *discov
 		return r.getHighlyRatedCandidates(ctx, req.Limit)
 	case discovery.FeedMostWishlisted:
 		return r.getMostWishlistedCandidates(ctx, req.Limit)
+	case discovery.FeedAlsoViewed:
+		return r.getAlsoViewedCandidates(ctx, req.UserID, req.SessionID, req.Limit)
 	case discovery.FeedFeatured:
 		return r.getFeaturedCandidates(ctx, req.Limit)
 	case discovery.FeedSearch:
@@ -99,6 +108,102 @@ func (r *DiscoveryRepository) getBestSellerCandidates(ctx context.Context, limit
 	defer rows.Close()
 
 	return scanCandidatesWithSignals(rows, "weekly_purchases", "conversion_rate")
+}
+
+func (r *DiscoveryRepository) getRecommendedCandidates(ctx context.Context, userID int64, limit int) ([]discovery.Candidate, error) {
+	const q = `
+		WITH recent_user_products AS (
+			SELECT product_id
+			FROM (
+				SELECT product_id, MAX(interacted_at) AS interacted_at
+				FROM (
+					SELECT pe.product_id, MAX(pe.created_at) AS interacted_at
+					FROM product_events pe
+					WHERE pe.user_id = $2
+					GROUP BY pe.product_id
+
+					UNION ALL
+
+					SELECT oi.product_id, MAX(o.created_at) AS interacted_at
+					FROM orders o
+					JOIN order_items oi ON oi.order_id = o.id
+					WHERE o.user_id = $2
+					GROUP BY oi.product_id
+
+					UNION ALL
+
+					SELECT wi.product_id, MAX(wi.added_at) AS interacted_at
+					FROM wishlists w
+					JOIN wishlist_items wi ON wi.wishlist_id = w.id
+					WHERE w.user_id = $2
+					GROUP BY wi.product_id
+				) interactions
+				GROUP BY product_id
+			) ranked_recent
+			ORDER BY interacted_at DESC, product_id DESC
+			LIMIT $3
+		),
+		affinity_products AS (
+			SELECT pcm.product_id,
+			       MAX(uca.score)::DOUBLE PRECISION AS personalization_score
+			FROM user_category_affinity uca
+			JOIN product_category_map pcm ON pcm.category_id = uca.category_id
+			JOIN products p ON p.id = pcm.product_id
+			WHERE uca.user_id = $2
+			  AND p.status = $1
+			GROUP BY pcm.product_id
+		),
+		co_view_products AS (
+			SELECT pcv.related_product_id AS product_id,
+			       MAX(pcv.score)::DOUBLE PRECISION AS co_view_score
+			FROM product_co_views pcv
+			JOIN recent_user_products rup ON rup.product_id = pcv.product_id
+			JOIN products p ON p.id = pcv.related_product_id
+			WHERE p.status = $1
+			GROUP BY pcv.related_product_id
+		)
+		SELECT p.id,
+		       COALESCE(ap.personalization_score, 0)::DOUBLE PRECISION AS personalization_score,
+		       COALESCE(cvp.co_view_score, 0)::DOUBLE PRECISION AS co_view_score,
+		       COALESCE(pm.conversion_rate, 0)::DOUBLE PRECISION AS conversion_rate,
+		       COALESCE(pm.trending_score, 0)::DOUBLE PRECISION AS trending_score
+		FROM products p
+		LEFT JOIN affinity_products ap ON ap.product_id = p.id
+		LEFT JOIN co_view_products cvp ON cvp.product_id = p.id
+		LEFT JOIN product_metrics pm ON pm.product_id = p.id
+		WHERE p.status = $1
+		  AND (ap.product_id IS NOT NULL OR cvp.product_id IS NOT NULL)
+		  AND NOT EXISTS (
+		      SELECT 1
+		      FROM recent_user_products rup
+		      WHERE rup.product_id = p.id
+		  )
+		ORDER BY
+			($4 * COALESCE(ap.personalization_score, 0)::DOUBLE PRECISION)
+			+ ($5 * COALESCE(cvp.co_view_score, 0)::DOUBLE PRECISION)
+			+ ($6 * COALESCE(pm.conversion_rate, 0)::DOUBLE PRECISION)
+			+ ($7 * COALESCE(pm.trending_score, 0)::DOUBLE PRECISION) DESC,
+			p.id DESC
+		LIMIT $8`
+
+	rows, err := r.db.Query(
+		ctx,
+		q,
+		product.StatusActive,
+		userID,
+		recentInteractionLimit,
+		recommendedAffinityWeight,
+		recommendedCoViewWeight,
+		recommendedConversionWeight,
+		recommendedTrendingWeight,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get recommended candidates: %w", err)
+	}
+	defer rows.Close()
+
+	return scanCandidatesWithSignals(rows, "personalization_score", "co_view_score", "conversion_rate", "trending_score")
 }
 
 func (r *DiscoveryRepository) getCategoryCandidates(ctx context.Context, categoryID int64, limit int) ([]discovery.Candidate, error) {
@@ -250,6 +355,74 @@ func (r *DiscoveryRepository) getMostWishlistedCandidates(ctx context.Context, l
 	defer rows.Close()
 
 	return scanCandidatesWithSignals(rows, "wishlist_count")
+}
+
+func (r *DiscoveryRepository) getAlsoViewedCandidates(ctx context.Context, userID *int64, sessionID *string, limit int) ([]discovery.Candidate, error) {
+	const qTemplate = `
+		WITH recent_products AS (
+			SELECT product_id
+			FROM (
+				SELECT pe.product_id, MAX(pe.created_at) AS interacted_at
+				FROM product_events pe
+				WHERE pe.event_type = 'view'
+				  AND %s
+				GROUP BY pe.product_id
+			) ranked_recent
+			ORDER BY interacted_at DESC, product_id DESC
+			LIMIT $3
+		),
+		co_view_products AS (
+			SELECT pcv.related_product_id AS product_id,
+			       MAX(pcv.score)::DOUBLE PRECISION AS co_view_score
+			FROM product_co_views pcv
+			JOIN recent_products rp ON rp.product_id = pcv.product_id
+			JOIN products p ON p.id = pcv.related_product_id
+			WHERE p.status = $1
+			GROUP BY pcv.related_product_id
+		)
+		SELECT p.id,
+		       cvp.co_view_score,
+		       COALESCE(pm.weekly_views, 0)::DOUBLE PRECISION AS popularity_score,
+		       COALESCE(pm.conversion_rate, 0)::DOUBLE PRECISION AS conversion_rate
+		FROM co_view_products cvp
+		JOIN products p ON p.id = cvp.product_id
+		LEFT JOIN product_metrics pm ON pm.product_id = cvp.product_id
+		WHERE p.status = $1
+		  AND NOT EXISTS (
+		      SELECT 1
+		      FROM recent_products rp
+		      WHERE rp.product_id = p.id
+		  )
+			ORDER BY
+			cvp.co_view_score DESC,
+			COALESCE(pm.weekly_views, 0)::DOUBLE PRECISION DESC,
+			COALESCE(pm.conversion_rate, 0)::DOUBLE PRECISION DESC,
+			p.id DESC
+		LIMIT $4`
+
+	filterCondition := "pe.user_id = $2"
+	filterValue := any(nil)
+	if userID != nil {
+		filterValue = *userID
+	} else {
+		filterCondition = "pe.session_id = $2"
+		filterValue = *sessionID
+	}
+
+	rows, err := r.db.Query(
+		ctx,
+		fmt.Sprintf(qTemplate, filterCondition),
+		product.StatusActive,
+		filterValue,
+		recentInteractionLimit,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get also viewed candidates: %w", err)
+	}
+	defer rows.Close()
+
+	return scanCandidatesWithSignals(rows, "co_view_score", "popularity_score", "conversion_rate")
 }
 
 func (r *DiscoveryRepository) getFeaturedCandidates(ctx context.Context, limit int) ([]discovery.Candidate, error) {

@@ -63,10 +63,40 @@ func TestFeedRequestValidateRejectsBlankSearchQuery(t *testing.T) {
 }
 
 func TestFeedRequestValidateAllowsAlsoViewedFeedType(t *testing.T) {
-	req := &FeedRequest{FeedType: FeedAlsoViewed}
+	sessionID := "session-1"
+	req := &FeedRequest{FeedType: FeedAlsoViewed, SessionID: &sessionID}
 
 	if err := req.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestFeedRequestValidateRequiresUserIDForRecommended(t *testing.T) {
+	req := &FeedRequest{FeedType: FeedRecommended}
+
+	if err := req.Validate(); err != ErrUserRequired {
+		t.Fatalf("Validate() error = %v, want %v", err, ErrUserRequired)
+	}
+}
+
+func TestFeedRequestValidateRequiresIdentityForAlsoViewed(t *testing.T) {
+	req := &FeedRequest{FeedType: FeedAlsoViewed}
+
+	if err := req.Validate(); err != ErrUserOrSessionRequired {
+		t.Fatalf("Validate() error = %v, want %v", err, ErrUserOrSessionRequired)
+	}
+}
+
+func TestFeedRequestValidateTrimsSessionID(t *testing.T) {
+	userID := int64(5)
+	sessionID := "  session-42  "
+	req := &FeedRequest{FeedType: FeedAlsoViewed, UserID: &userID, SessionID: &sessionID}
+
+	if err := req.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if req.SessionID == nil || *req.SessionID != "session-42" {
+		t.Fatalf("Validate() session_id = %v, want session-42", req.SessionID)
 	}
 }
 

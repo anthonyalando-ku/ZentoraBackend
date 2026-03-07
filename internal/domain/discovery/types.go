@@ -67,6 +67,19 @@ func (r *FeedRequest) Validate() error {
 		r.Limit = MaxFeedLimit
 	}
 
+	if r.UserID != nil && *r.UserID <= 0 {
+		return ErrInvalidUserID
+	}
+
+	if r.SessionID != nil {
+		trimmed := strings.TrimSpace(*r.SessionID)
+		if trimmed == "" {
+			r.SessionID = nil
+		} else if trimmed != *r.SessionID {
+			r.SessionID = &trimmed
+		}
+	}
+
 	if r.CategoryID != nil && *r.CategoryID <= 0 {
 		return ErrInvalidCategoryID
 	}
@@ -82,6 +95,12 @@ func (r *FeedRequest) Validate() error {
 	}
 	if r.FeedType == FeedSearch && (r.Query == nil || *r.Query == "") {
 		return ErrQueryRequired
+	}
+	if r.FeedType == FeedRecommended && r.UserID == nil {
+		return ErrUserRequired
+	}
+	if r.FeedType == FeedAlsoViewed && r.UserID == nil && r.SessionID == nil {
+		return ErrUserOrSessionRequired
 	}
 
 	return nil
