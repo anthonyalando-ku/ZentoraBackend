@@ -68,8 +68,8 @@ CREATE INDEX idx_product_search_documents_updated_at ON product_search_documents
 CREATE TABLE product_boosts (
     id BIGSERIAL PRIMARY KEY,
     product_id BIGINT NOT NULL,
-    feed_type VARCHAR(50) NOT NULL,
-    boost_score DOUBLE PRECISION NOT NULL DEFAULT 0,
+    feed_type VARCHAR(50) NOT NULL CHECK (feed_type ~ '^[a-z0-9_]+$'),
+    boost_score DOUBLE PRECISION NOT NULL DEFAULT 0 CHECK (boost_score >= 0),
     start_at TIMESTAMP NOT NULL,
     end_at TIMESTAMP NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
