@@ -560,18 +560,10 @@ func (r *DiscoveryRepository) getAlsoViewedCandidates(ctx context.Context, req *
 }
 
 func (r *DiscoveryRepository) getFeaturedCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
-	const q = `
-		SELECT p.id,
-		       1.0::DOUBLE PRECISION AS merchandising_score,
-		       EXTRACT(EPOCH FROM p.created_at)::DOUBLE PRECISION AS freshness_score
-		FROM products p
-		WHERE p.status = $1
-		  AND p.is_featured = TRUE`
-
 	return r.runFilteredCandidateQuery(ctx, req, candidateQuery{
-		query:   q,
+		query:   buildFeaturedCandidateQuery(),
 		args:    []any{product.StatusActive},
-		orderBy: "ranked.freshness_score DESC, ranked.product_id DESC",
+		orderBy: "ranked.merchandising_score DESC, ranked.freshness_score DESC, ranked.product_id DESC",
 		signals: []string{"merchandising_score", "freshness_score"},
 	}, "get featured candidates")
 }
@@ -790,6 +782,50 @@ func buildEditorialCandidateQuery() string {
 		editorialFeaturedBaseScore,
 		editorialCategoryBaseScore,
 		editorialTrendingBaseScore,
+	)
+}
+
+func buildFeaturedCandidateQuery() string {
+	return fmt.Sprintf(`
+		WITH featured_section_products AS (
+			SELECT hs.type,
+			       hs.reference_id,
+			       hs.sort_order
+			FROM homepage_sections hs
+			WHERE hs.is_active = TRUE
+			  AND hs.reference_id IS NOT NULL
+			  AND hs.type IN ('featured', 'custom')
+		),
+		featured_candidates AS (
+			SELECT p.id AS product_id,
+			       1.0::DOUBLE PRECISION AS merchandising_score,
+			       EXTRACT(EPOCH FROM p.created_at)::DOUBLE PRECISION AS freshness_score
+			FROM products p
+			WHERE p.status = $1
+			  AND p.is_featured = TRUE
+
+			UNION ALL
+
+			SELECT p.id AS product_id,
+			       GREATEST(
+			           CASE
+			               WHEN hs.type = 'featured' THEN %d - hs.sort_order
+			               ELSE %d - hs.sort_order
+			           END,
+			           1
+			       )::DOUBLE PRECISION AS merchandising_score,
+			       EXTRACT(EPOCH FROM p.created_at)::DOUBLE PRECISION AS freshness_score
+			FROM featured_section_products hs
+			JOIN products p ON p.id = hs.reference_id
+			WHERE p.status = $1
+		)
+		SELECT fc.product_id,
+		       MAX(fc.merchandising_score)::DOUBLE PRECISION AS merchandising_score,
+		       MAX(fc.freshness_score)::DOUBLE PRECISION AS freshness_score
+		FROM featured_candidates fc
+		GROUP BY fc.product_id`,
+		editorialFeaturedBaseScore,
+		editorialCustomBaseScore,
 	)
 }
 

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -93,6 +94,171 @@ func (s *stubCategoryRepository) GetCategoryByID(_ context.Context, id int64) (*
 	s.called = true
 	s.categoryID = id
 	return s.category, s.err
+}
+
+type featuredExecutionProduct struct {
+	card                     discoverydomain.ProductCard
+	brandID                  int64
+	tagIDs                   []int64
+	variantAttributeValueIDs []int64
+	isFeatured               bool
+	homepageSectionTypes     []string
+	createdAt                time.Time
+}
+
+type featuredExecutionRepository struct {
+	products []featuredExecutionProduct
+}
+
+func (r *featuredExecutionRepository) GetFeedCandidates(_ context.Context, req *discoverydomain.FeedRequest) ([]discoverydomain.Candidate, error) {
+	if req.FeedType != discoverydomain.FeedFeatured {
+		return nil, discoverydomain.ErrFeedNotImplemented
+	}
+
+	candidates := make([]discoverydomain.Candidate, 0, len(r.products))
+	for _, product := range r.products {
+		if !featuredExecutionMatchesSource(product) || !featuredExecutionMatchesFilters(product, req.Filters) {
+			continue
+		}
+
+		score := 1.0
+		for _, sectionType := range product.homepageSectionTypes {
+			switch sectionType {
+			case "custom":
+				score = maxFloat(score, 1000)
+			case "featured":
+				score = maxFloat(score, 800)
+			}
+		}
+
+		candidates = append(candidates, discoverydomain.Candidate{
+			ProductID: product.card.ProductID,
+			Signals: map[string]float64{
+				"merchandising_score": score,
+				"freshness_score":     float64(product.createdAt.Unix()),
+			},
+		})
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		left := candidates[i]
+		right := candidates[j]
+		if left.Signals["merchandising_score"] != right.Signals["merchandising_score"] {
+			return left.Signals["merchandising_score"] > right.Signals["merchandising_score"]
+		}
+		if left.Signals["freshness_score"] != right.Signals["freshness_score"] {
+			return left.Signals["freshness_score"] > right.Signals["freshness_score"]
+		}
+		return left.ProductID > right.ProductID
+	})
+
+	if len(candidates) > req.Limit {
+		candidates = candidates[:req.Limit]
+	}
+	return candidates, nil
+}
+
+func (r *featuredExecutionRepository) HydrateProductCards(_ context.Context, productIDs []int64) ([]discoverydomain.ProductCard, error) {
+	byID := make(map[int64]discoverydomain.ProductCard, len(r.products))
+	for _, product := range r.products {
+		byID[product.card.ProductID] = product.card
+	}
+
+	cards := make([]discoverydomain.ProductCard, 0, len(productIDs))
+	for _, productID := range productIDs {
+		card, ok := byID[productID]
+		if !ok {
+			continue
+		}
+		cards = append(cards, card)
+	}
+	return cards, nil
+}
+
+func (r *featuredExecutionRepository) Suggest(context.Context, *discoverydomain.SuggestRequest) ([]discoverydomain.Suggestion, error) {
+	return nil, nil
+}
+
+func (r *featuredExecutionRepository) TrackSearch(context.Context, *discoverydomain.SearchEvent) (int64, error) {
+	return 0, nil
+}
+
+func (r *featuredExecutionRepository) TrackSearchClick(context.Context, *discoverydomain.SearchClickEvent) error {
+	return nil
+}
+
+func featuredExecutionMatchesSource(product featuredExecutionProduct) bool {
+	if product.isFeatured {
+		return true
+	}
+	for _, sectionType := range product.homepageSectionTypes {
+		if sectionType == "featured" || sectionType == "custom" {
+			return true
+		}
+	}
+	return false
+}
+
+func featuredExecutionMatchesFilters(product featuredExecutionProduct, filters discoverydomain.FeedFilter) bool {
+	if len(filters.BrandIDs) > 0 && !containsInt64(filters.BrandIDs, product.brandID) {
+		return false
+	}
+	if len(filters.TagIDs) > 0 && !containsAnyInt64(product.tagIDs, filters.TagIDs) {
+		return false
+	}
+	if filters.PriceMin != nil && product.card.Price < *filters.PriceMin {
+		return false
+	}
+	if filters.PriceMax != nil && product.card.Price > *filters.PriceMax {
+		return false
+	}
+	if filters.MinRating != nil && product.card.Rating < *filters.MinRating {
+		return false
+	}
+	if filters.DiscountOnly && product.card.Discount <= 0 {
+		return false
+	}
+	if filters.InStockOnly && product.card.InventoryStatus == discoverydomain.InventoryStatusOutOfStock {
+		return false
+	}
+	if len(filters.VariantAttributeValueIDs) > 0 && !containsAllInt64(product.variantAttributeValueIDs, filters.VariantAttributeValueIDs) {
+		return false
+	}
+	return true
+}
+
+func containsInt64(values []int64, target int64) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAnyInt64(values []int64, targets []int64) bool {
+	for _, target := range targets {
+		if containsInt64(values, target) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsAllInt64(values []int64, targets []int64) bool {
+	for _, target := range targets {
+		if !containsInt64(values, target) {
+			return false
+		}
+	}
+	return true
+}
+
+func maxFloat(left, right float64) float64 {
+	if right > left {
+		return right
+	}
+	return left
 }
 
 func assertInt64SliceEqual(t *testing.T, got, want []int64, message string) {
@@ -570,6 +736,132 @@ func TestDiscoveryServiceGetFeedReturnsFrontendReadyHydratedCards(t *testing.T) 
 	}
 	if card.InventoryStatus != discoverydomain.InventoryStatusInStock {
 		t.Fatalf("GetFeed() inventory_status = %q, want %q", card.InventoryStatus, discoverydomain.InventoryStatusInStock)
+	}
+}
+
+func TestDiscoveryServiceGetFeedExecutesFeaturedPipelineWithHomepageSectionsAndFilters(t *testing.T) {
+	priceMin := 50.0
+	priceMax := 150.0
+	minRating := 4.5
+	now := time.Unix(1_700_000_000, 0)
+
+	repo := &featuredExecutionRepository{
+		products: []featuredExecutionProduct{
+			{
+				card: discoverydomain.ProductCard{
+					ProductID:       101,
+					Name:            "Flagship Phone",
+					Slug:            "flagship-phone",
+					PrimaryImage:    "https://cdn.example.com/products/101.jpg",
+					Price:           129.99,
+					Discount:        15,
+					Rating:          4.9,
+					ReviewCount:     120,
+					InventoryStatus: discoverydomain.InventoryStatusInStock,
+					Brand:           "Zentora",
+					Category:        "Phones",
+				},
+				brandID:                  1,
+				tagIDs:                   []int64{10, 20},
+				variantAttributeValueIDs: []int64{100, 101},
+				isFeatured:               true,
+				createdAt:                now.Add(-2 * time.Hour),
+			},
+			{
+				card: discoverydomain.ProductCard{
+					ProductID:       202,
+					Name:            "Curated Earbuds",
+					Slug:            "curated-earbuds",
+					PrimaryImage:    "https://cdn.example.com/products/202.jpg",
+					Price:           89.50,
+					Discount:        5,
+					Rating:          4.8,
+					ReviewCount:     88,
+					InventoryStatus: discoverydomain.InventoryStatusLowStock,
+					Brand:           "Zentora Audio",
+					Category:        "Audio",
+				},
+				brandID:                  1,
+				tagIDs:                   []int64{10},
+				variantAttributeValueIDs: []int64{100},
+				homepageSectionTypes:     []string{"custom"},
+				createdAt:                now.Add(-1 * time.Hour),
+			},
+			{
+				card: discoverydomain.ProductCard{
+					ProductID:       303,
+					Name:            "Wrong Brand Tablet",
+					Slug:            "wrong-brand-tablet",
+					PrimaryImage:    "https://cdn.example.com/products/303.jpg",
+					Price:           119.99,
+					Discount:        20,
+					Rating:          4.7,
+					ReviewCount:     40,
+					InventoryStatus: discoverydomain.InventoryStatusInStock,
+					Brand:           "Other Brand",
+					Category:        "Tablets",
+				},
+				brandID:                  2,
+				tagIDs:                   []int64{10},
+				variantAttributeValueIDs: []int64{100},
+				isFeatured:               true,
+				createdAt:                now,
+			},
+			{
+				card: discoverydomain.ProductCard{
+					ProductID:       404,
+					Name:            "Out Of Stock Camera",
+					Slug:            "out-of-stock-camera",
+					PrimaryImage:    "https://cdn.example.com/products/404.jpg",
+					Price:           99.99,
+					Discount:        12,
+					Rating:          4.6,
+					ReviewCount:     12,
+					InventoryStatus: discoverydomain.InventoryStatusOutOfStock,
+					Brand:           "Zentora",
+					Category:        "Cameras",
+				},
+				brandID:                  1,
+				tagIDs:                   []int64{10},
+				variantAttributeValueIDs: []int64{100},
+				homepageSectionTypes:     []string{"featured"},
+				createdAt:                now.Add(-30 * time.Minute),
+			},
+		},
+	}
+	svc := NewDiscoveryService(repo, &stubCategoryRepository{})
+
+	got, err := svc.GetFeed(context.Background(), &discoverydomain.FeedRequest{
+		FeedType: discoverydomain.FeedFeatured,
+		Limit:    5,
+		Filters: discoverydomain.FeedFilter{
+			BrandIDs:                 []int64{1},
+			TagIDs:                   []int64{10},
+			VariantAttributeValueIDs: []int64{100},
+			PriceMin:                 &priceMin,
+			PriceMax:                 &priceMax,
+			MinRating:                &minRating,
+			DiscountOnly:             true,
+			InStockOnly:              true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("GetFeed() error = %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Fatalf("GetFeed() card count = %d, want 2 eligible featured cards", len(got))
+	}
+	assertInt64SliceEqual(t, []int64{got[0].ProductID, got[1].ProductID}, []int64{202, 101}, "featured feed ids")
+
+	if got[0].PrimaryImage == "" || got[0].Brand == "" || got[0].Category == "" {
+		t.Fatalf("first card = %#v, want hydrated image, brand, and category fields", got[0])
+	}
+	if got[1].InventoryStatus != discoverydomain.InventoryStatusInStock {
+		t.Fatalf("second card inventory_status = %q, want %q", got[1].InventoryStatus, discoverydomain.InventoryStatusInStock)
+	}
+	if got[0].Discount <= 0 || got[0].Price <= 0 || got[0].Rating < minRating {
+		t.Fatalf("first card pricing/rating fields = %#v, want hydrated discount, price, and rating", got[0])
 	}
 }
 

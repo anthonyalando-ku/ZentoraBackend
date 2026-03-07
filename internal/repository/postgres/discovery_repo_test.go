@@ -80,3 +80,21 @@ func TestBuildEditorialCandidateQueryUsesHomepageSections(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildFeaturedCandidateQueryUsesHomepageSections(t *testing.T) {
+	query := buildFeaturedCandidateQuery()
+
+	expectedFragments := []string{
+		"homepage_sections",
+		"featured_section_products",
+		"type IN ('featured', 'custom')",
+		"p.is_featured = TRUE",
+		"merchandising_score",
+	}
+
+	for _, fragment := range expectedFragments {
+		if !strings.Contains(query, fragment) {
+			t.Fatalf("expected query to contain %q, got:\n%s", fragment, query)
+		}
+	}
+}
