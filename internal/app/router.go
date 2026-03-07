@@ -3,6 +3,7 @@ package app
 import (
 	authHandler "zentora-service/internal/handlers/auth"
 	catalogHandler "zentora-service/internal/handlers/catalog"
+	discoveryHandler "zentora-service/internal/handlers/discovery"
 	notifyHandler "zentora-service/internal/handlers/notification"
 	userHandler "zentora-service/internal/handlers/user"
 	wsHandler "zentora-service/internal/handlers/websocket"
@@ -13,12 +14,13 @@ import (
 )
 
 type Handlers struct {
-	AuthHandler    *authHandler.AuthHandler
-	NotifHandler   *notifyHandler.NotificationHandler
-	WSHandler      *wsHandler.WebSocketHandler
-	CatalogHandler *catalogHandler.CatalogHandler
-	UserHandler    *userHandler.UserHandler
-	AuthMiddleware *middleware.AuthMiddleware
+	AuthHandler      *authHandler.AuthHandler
+	NotifHandler     *notifyHandler.NotificationHandler
+	WSHandler        *wsHandler.WebSocketHandler
+	CatalogHandler   *catalogHandler.CatalogHandler
+	DiscoveryHandler *discoveryHandler.Handler
+	UserHandler      *userHandler.UserHandler
+	AuthMiddleware   *middleware.AuthMiddleware
 }
 
 func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
@@ -136,6 +138,17 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 		catalogPublic.GET("/inventory/locations/:id", h.CatalogHandler.GetLocation)
 	}
 
+	// ── Discovery ──────────────────────────────────────────────────────────────
+	discoveryRoutes := api.Group("/discovery")
+	discoveryRoutes.Use(h.AuthMiddleware.OptionalAuth())
+	{
+		discoveryRoutes.GET("/feed", h.DiscoveryHandler.GetFeedCandidates)
+		discoveryRoutes.GET("/search", h.DiscoveryHandler.Search)
+		discoveryRoutes.GET("/suggest", h.DiscoveryHandler.Suggest)
+		discoveryRoutes.POST("/search/events", h.DiscoveryHandler.TrackSearch)
+		discoveryRoutes.POST("/search/clicks", h.DiscoveryHandler.TrackSearchClick)
+	}
+
 	// ── Super-admin only ───────────────────────────────────────────────────────
 	superAdmin := api.Group("/admin")
 	superAdmin.Use(h.AuthMiddleware.SuperAdminOnly()...)
@@ -223,6 +236,12 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 		adminCatalog.PUT("/discounts/:id", h.CatalogHandler.UpdateDiscount)
 		adminCatalog.DELETE("/discounts/:id", h.CatalogHandler.DeleteDiscount)
 		adminCatalog.PUT("/discounts/:id/targets", h.CatalogHandler.SetDiscountTargets)
+	}
+
+	adminDiscovery := api.Group("/admin/discovery")
+	adminDiscovery.Use(h.AuthMiddleware.AdminOnly()...)
+	{
+		adminDiscovery.POST("/metrics/recompute", h.DiscoveryHandler.RecomputeMetrics)
 	}
 
 	// ── Health ─────────────────────────────────────────────────────────────────

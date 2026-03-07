@@ -10,10 +10,11 @@ import (
 
 type AppConfig struct {
 	// Server
-	HTTPAddr  string
-	GRPCAddr  string
-	RedisAddr string
-	RedisPass string
+	HTTPAddr              string
+	GRPCAddr              string
+	RedisAddr             string
+	RedisPass             string
+	WorkerMetricsInterval time.Duration
 
 	// JWT
 	JWT jwt.Config
@@ -37,13 +38,14 @@ type AppConfig struct {
 // Load loads environment variables into AppConfig.
 func Load() AppConfig {
 	return AppConfig{
-		HTTPAddr:  getEnv("HTTP_ADDR", ":8002"),
-		GRPCAddr:  getEnv("GRPC_ADDR", ":8006"),
-		RedisAddr: getEnv("REDIS_ADDR", "redis-zentora:6379"),
-		RedisPass: getEnv("REDIS_PASS", ""),
-		ImageKitPrivateKey: getEnv("IMAGE_KIT_PRIVATE_KEY",""),
-		ImageKitPublicKey: getEnv("IMAGE_KIT_PUBLIC_KEY",""),
-		ImageKitURL: getEnv("IMAGE_KIT_URL_ENDPOINT",""),
+		HTTPAddr:              getEnv("HTTP_ADDR", ":8002"),
+		GRPCAddr:              getEnv("GRPC_ADDR", ":8006"),
+		RedisAddr:             getEnv("REDIS_ADDR", "redis-zentora:6379"),
+		RedisPass:             getEnv("REDIS_PASS", ""),
+		WorkerMetricsInterval: getEnvDuration("WORKER_METRICS_INTERVAL", 15*time.Minute),
+		ImageKitPrivateKey:    getEnv("IMAGE_KIT_PRIVATE_KEY", ""),
+		ImageKitPublicKey:     getEnv("IMAGE_KIT_PUBLIC_KEY", ""),
+		ImageKitURL:           getEnv("IMAGE_KIT_URL_ENDPOINT", ""),
 
 		JWT: jwt.Config{
 			PrivPath: getEnv("JWT_PRIVATE_KEY_PATH", "/app/secrets/jwt_private.pem"),
@@ -79,4 +81,13 @@ func getEnvSlice(key string, defaultValue []string) []string {
 		return strings.Split(value, ",")
 	}
 	return defaultValue
+}
+
+func getEnvDuration(key string, fallback time.Duration) time.Duration {
+	if value := os.Getenv(key); value != "" {
+		if parsed, err := time.ParseDuration(value); err == nil {
+			return parsed
+		}
+	}
+	return fallback
 }

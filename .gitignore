@@ -3,3 +3,5 @@
 
 /secrets/
 /build/zentora
+coverage.out
+coverage.html

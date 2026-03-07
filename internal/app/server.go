@@ -12,6 +12,7 @@ import (
 	"zentora-service/internal/db"
 	authHandler "zentora-service/internal/handlers/auth"
 	catalogH "zentora-service/internal/handlers/catalog"
+	discoveryH "zentora-service/internal/handlers/discovery"
 	notifyH "zentora-service/internal/handlers/notification"
 	userH "zentora-service/internal/handlers/user"
 	wsHandler "zentora-service/internal/handlers/websocket"
@@ -21,9 +22,11 @@ import (
 	"zentora-service/internal/repository/postgres"
 	authUsecase "zentora-service/internal/service/auth"
 	catalogUsecase "zentora-service/internal/service/catalog"
+	discoveryUsecase "zentora-service/internal/service/discovery"
 	"zentora-service/internal/service/email"
 	notifyUsecase "zentora-service/internal/service/notification"
 	userUsecase "zentora-service/internal/service/user"
+	workerUsecase "zentora-service/internal/service/worker"
 	"zentora-service/internal/websocket"
 	wsHandlers "zentora-service/internal/websocket/handler"
 
@@ -34,9 +37,9 @@ import (
 )
 
 type Server struct {
-	cfg    config.AppConfig
-	engine *gin.Engine
-	logger *zap.Logger
+	cfg         config.AppConfig
+	engine      *gin.Engine
+	logger      *zap.Logger
 	authService *authUsecase.AuthService
 }
 
@@ -111,6 +114,7 @@ func (s *Server) Start() error {
 	// ----- Repositories -----
 	authRepo := postgres.NewAuthRepository(pool)
 	notifyRepo := postgres.NewNotificationRepository(pool)
+	discoveryRepo := postgres.NewDiscoveryRepository(pool)
 
 	// Catalog and user repositories
 	categoryRepo := postgres.NewCategoryRepository(pool)
@@ -173,6 +177,8 @@ func (s *Server) Start() error {
 	)
 
 	userService := userUsecase.NewUserService(userAddressRepo)
+	discoveryService := discoveryUsecase.NewDiscoveryService(discoveryRepo, categoryRepo, redisClient)
+	metricsJobService := workerUsecase.NewMetricsJobService(discoveryRepo, s.cfg.WorkerMetricsInterval, zap.NewStdLog(logger))
 
 	// ----- Initialize Super Admin -----
 	if err := s.initializeSuperAdmin(); err != nil {
@@ -185,6 +191,7 @@ func (s *Server) Start() error {
 	notifHandler := notifyH.NewNotificationHandler(notifService)
 	wsHandlerInst := wsHandler.NewWebSocketHandler(hub, logger)
 	catalogHandlerInst := catalogH.NewCatalogHandler(catalogService, logger)
+	discoveryHandlerInst := discoveryH.NewHandler(discoveryService, metricsJobService)
 	userHandlerInst := userH.NewUserHandler(userService)
 
 	// ----- Middlewares -----
@@ -198,12 +205,13 @@ func (s *Server) Start() error {
 
 	// ----- Router -----
 	handlers := &Handlers{
-		AuthHandler:    authHandlerInst,
-		NotifHandler:   notifHandler,
-		WSHandler:      wsHandlerInst,
-		CatalogHandler: catalogHandlerInst,
-		UserHandler:    userHandlerInst,
-		AuthMiddleware: authMiddleware,
+		AuthHandler:      authHandlerInst,
+		NotifHandler:     notifHandler,
+		WSHandler:        wsHandlerInst,
+		CatalogHandler:   catalogHandlerInst,
+		DiscoveryHandler: discoveryHandlerInst,
+		UserHandler:      userHandlerInst,
+		AuthMiddleware:   authMiddleware,
 	}
 	SetupRouter(s.engine, logger, handlers)
 
