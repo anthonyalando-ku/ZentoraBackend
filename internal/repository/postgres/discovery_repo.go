@@ -363,7 +363,7 @@ func (r *DiscoveryRepository) getRecommendedCandidates(ctx context.Context, req 
 
 func (r *DiscoveryRepository) getCategoryCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const q = `
-		SELECT p.id,
+		SELECT p.id AS product_id,
 		       MAX(1.0 / (cc.depth + 1))::DOUBLE PRECISION AS category_score,
 		       MIN(cc.depth)::DOUBLE PRECISION AS category_depth
 		FROM products p
@@ -450,7 +450,7 @@ func (r *DiscoveryRepository) getDealCandidates(ctx context.Context, req *discov
 
 func (r *DiscoveryRepository) getNewArrivalCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const q = `
-		SELECT p.id,
+		SELECT p.id AS product_id,
 		       EXTRACT(EPOCH FROM p.created_at)::DOUBLE PRECISION AS freshness_score
 		FROM products p
 		WHERE p.status = $1`
@@ -465,7 +465,7 @@ func (r *DiscoveryRepository) getNewArrivalCandidates(ctx context.Context, req *
 
 func (r *DiscoveryRepository) getHighlyRatedCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const q = `
-		SELECT p.id,
+		SELECT p.id AS product_id,
 		       p.rating::DOUBLE PRECISION AS rating_score,
 		       p.review_count::DOUBLE PRECISION AS review_count
 		FROM products p
@@ -482,7 +482,7 @@ func (r *DiscoveryRepository) getHighlyRatedCandidates(ctx context.Context, req 
 
 func (r *DiscoveryRepository) getMostWishlistedCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
 	const q = `
-		SELECT p.id,
+		SELECT p.id AS product_id,
 		       COUNT(*)::DOUBLE PRECISION AS wishlist_count
 		FROM wishlist_items wi
 		JOIN products p ON p.id = wi.product_id
@@ -520,7 +520,7 @@ func (r *DiscoveryRepository) getAlsoViewedCandidates(ctx context.Context, req *
 			WHERE p.status = $1
 			GROUP BY pcv.related_product_id
 		)
-		SELECT p.id,
+		SELECT p.id AS product_id,
 		       cvp.co_view_score,
 		       COALESCE(pm.weekly_views, 0)::DOUBLE PRECISION AS popularity_score,
 		       COALESCE(pm.conversion_rate, 0)::DOUBLE PRECISION AS conversion_rate

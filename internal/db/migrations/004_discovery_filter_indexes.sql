@@ -1,3 +1,5 @@
+\c zentora;
+
 BEGIN;
 
 CREATE INDEX IF NOT EXISTS idx_product_tags_tag_product
