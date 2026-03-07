@@ -16,7 +16,7 @@ import (
 )
 
 type discoveryService interface {
-	GetFeedCandidates(ctx context.Context, req *discoverydomain.FeedRequest) ([]discoverydomain.Candidate, error)
+	GetFeed(ctx context.Context, req *discoverydomain.FeedRequest) ([]discoverydomain.ProductCard, error)
 	Suggest(ctx context.Context, req *discoverydomain.SuggestRequest) ([]discoverydomain.Suggestion, error)
 	TrackSearch(ctx context.Context, event *discoverydomain.SearchEvent) (int64, error)
 	TrackSearchClick(ctx context.Context, event *discoverydomain.SearchClickEvent) error
@@ -45,16 +45,16 @@ func (h *Handler) GetFeedCandidates(c *gin.Context) {
 		return
 	}
 
-	candidates, err := h.discovery.GetFeedCandidates(c.Request.Context(), req)
+	items, err := h.discovery.GetFeed(c.Request.Context(), req)
 	if err != nil {
 		handleError(c, err)
 		return
 	}
 
-	response.Success(c, http.StatusOK, "feed candidates retrieved", gin.H{
-		"feed_type":  req.FeedType,
-		"limit":      req.Limit,
-		"candidates": candidates,
+	response.Success(c, http.StatusOK, "feed retrieved", gin.H{
+		"feed_type": req.FeedType,
+		"limit":     req.Limit,
+		"items":     items,
 	})
 }
 

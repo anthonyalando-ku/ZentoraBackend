@@ -111,6 +111,28 @@ type Candidate struct {
 	Signals   map[string]float64
 }
 
+type InventoryStatus string
+
+const (
+	InventoryStatusInStock    InventoryStatus = "in_stock"
+	InventoryStatusLowStock   InventoryStatus = "low_stock"
+	InventoryStatusOutOfStock InventoryStatus = "out_of_stock"
+)
+
+type ProductCard struct {
+	ProductID       int64           `json:"product_id"`
+	Name            string          `json:"name"`
+	Slug            string          `json:"slug"`
+	PrimaryImage    string          `json:"primary_image"`
+	Price           float64         `json:"price"`
+	Discount        float64         `json:"discount"`
+	Rating          float64         `json:"rating"`
+	ReviewCount     int             `json:"review_count"`
+	InventoryStatus InventoryStatus `json:"inventory_status"`
+	Brand           string          `json:"brand"`
+	Category        string          `json:"category"`
+}
+
 type SuggestionType string
 
 const (

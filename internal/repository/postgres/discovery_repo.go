@@ -29,6 +29,7 @@ const (
 	recommendedConversionWeight = 0.10
 	recommendedTrendingWeight   = 0.10
 	recentInteractionLimit      = 20
+	lowStockThreshold           = 5
 )
 
 func NewDiscoveryRepository(db *pgxpool.Pool) *DiscoveryRepository {
@@ -66,6 +67,162 @@ func (r *DiscoveryRepository) GetFeedCandidates(ctx context.Context, req *discov
 	default:
 		return nil, discovery.ErrFeedNotImplemented
 	}
+}
+
+func (r *DiscoveryRepository) HydrateProductCards(ctx context.Context, productIDs []int64) ([]discovery.ProductCard, error) {
+	if len(productIDs) == 0 {
+		return []discovery.ProductCard{}, nil
+	}
+
+	const q = `
+		WITH requested_products AS (
+			SELECT product_id, ord
+			FROM unnest($1::BIGINT[]) WITH ORDINALITY AS rp(product_id, ord)
+		),
+		primary_images AS (
+			SELECT DISTINCT ON (pi.product_id)
+				pi.product_id,
+				pi.image_url
+			FROM product_images pi
+			JOIN requested_products rp ON rp.product_id = pi.product_id
+			ORDER BY pi.product_id, pi.is_primary DESC, pi.sort_order ASC, pi.id ASC
+		),
+		primary_categories AS (
+			SELECT DISTINCT ON (pcm.product_id)
+				pcm.product_id,
+				pc.name
+			FROM product_category_map pcm
+			JOIN product_categories pc ON pc.id = pcm.category_id
+			JOIN requested_products rp ON rp.product_id = pcm.product_id
+			ORDER BY pcm.product_id, pc.name ASC, pc.id ASC
+		),
+		inventory_summary AS (
+			SELECT pv.product_id,
+				COALESCE(SUM(ii.available_qty - ii.reserved_qty), 0) AS available_inventory
+			FROM product_variants pv
+			LEFT JOIN inventory_items ii ON ii.variant_id = pv.id
+			JOIN requested_products rp ON rp.product_id = pv.product_id
+			WHERE pv.is_active = TRUE
+			GROUP BY pv.product_id
+		),
+		active_discounts AS (
+			SELECT d.id, d.discount_type, d.value
+			FROM discounts d
+			WHERE d.is_active = TRUE
+			  AND (d.starts_at IS NULL OR d.starts_at <= NOW())
+			  AND (d.ends_at IS NULL OR d.ends_at >= NOW())
+		),
+		discount_candidates AS (
+			SELECT p.id AS product_id,
+				CASE
+					WHEN ad.discount_type = 'percentage' THEN ad.value::DOUBLE PRECISION
+					ELSE ((ad.value / NULLIF(p.base_price, 0)) * 100)::DOUBLE PRECISION
+				END AS discount_percent
+			FROM requested_products rp
+			JOIN products p ON p.id = rp.product_id
+			JOIN discount_targets dt
+			  ON dt.target_type = 'product'
+			 AND dt.target_id = p.id
+			JOIN active_discounts ad ON ad.id = dt.discount_id
+
+			UNION ALL
+
+			SELECT p.id AS product_id,
+				CASE
+					WHEN ad.discount_type = 'percentage' THEN ad.value::DOUBLE PRECISION
+					ELSE ((ad.value / NULLIF(p.base_price, 0)) * 100)::DOUBLE PRECISION
+				END AS discount_percent
+			FROM requested_products rp
+			JOIN products p ON p.id = rp.product_id
+			JOIN discount_targets dt
+			  ON dt.target_type = 'brand'
+			 AND dt.target_id = p.brand_id
+			JOIN active_discounts ad ON ad.id = dt.discount_id
+
+			UNION ALL
+
+			SELECT p.id AS product_id,
+				CASE
+					WHEN ad.discount_type = 'percentage' THEN ad.value::DOUBLE PRECISION
+					ELSE ((ad.value / NULLIF(p.base_price, 0)) * 100)::DOUBLE PRECISION
+				END AS discount_percent
+			FROM requested_products rp
+			JOIN products p ON p.id = rp.product_id
+			JOIN product_category_map pcm ON pcm.product_id = p.id
+			JOIN discount_targets dt
+			  ON dt.target_type = 'category'
+			 AND dt.target_id = pcm.category_id
+			JOIN active_discounts ad ON ad.id = dt.discount_id
+		),
+		best_discounts AS (
+			SELECT dc.product_id,
+			       COALESCE(MAX(dc.discount_percent), 0)::DOUBLE PRECISION AS discount_percent
+			FROM discount_candidates dc
+			GROUP BY dc.product_id
+		)
+		SELECT
+			p.id AS product_id,
+			p.name,
+			p.slug,
+			COALESCE(pi.image_url, '') AS primary_image,
+			ROUND((p.base_price * (1 - (COALESCE(bd.discount_percent, 0) / 100.0)))::NUMERIC, 2)::DOUBLE PRECISION AS price,
+			COALESCE(bd.discount_percent, 0)::DOUBLE PRECISION AS discount,
+			p.rating::DOUBLE PRECISION AS rating,
+			p.review_count,
+			CASE
+				WHEN COALESCE(inv.available_inventory, 0) <= 0 THEN $2
+				WHEN COALESCE(inv.available_inventory, 0) <= $3 THEN $4
+				ELSE $5
+			END AS inventory_status,
+			COALESCE(pb.name, '') AS brand,
+			COALESCE(pc.name, '') AS category
+		FROM requested_products rp
+		JOIN products p ON p.id = rp.product_id
+		LEFT JOIN primary_images pi ON pi.product_id = p.id
+		LEFT JOIN primary_categories pc ON pc.product_id = p.id
+		LEFT JOIN product_brands pb ON pb.id = p.brand_id
+		LEFT JOIN inventory_summary inv ON inv.product_id = p.id
+		LEFT JOIN best_discounts bd ON bd.product_id = p.id
+		ORDER BY rp.ord`
+
+	rows, err := r.db.Query(
+		ctx,
+		q,
+		productIDs,
+		discovery.InventoryStatusOutOfStock,
+		lowStockThreshold,
+		discovery.InventoryStatusLowStock,
+		discovery.InventoryStatusInStock,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("hydrate discovery product cards: %w", err)
+	}
+	defer rows.Close()
+
+	var cards []discovery.ProductCard
+	for rows.Next() {
+		var card discovery.ProductCard
+		if err := rows.Scan(
+			&card.ProductID,
+			&card.Name,
+			&card.Slug,
+			&card.PrimaryImage,
+			&card.Price,
+			&card.Discount,
+			&card.Rating,
+			&card.ReviewCount,
+			&card.InventoryStatus,
+			&card.Brand,
+			&card.Category,
+		); err != nil {
+			return nil, fmt.Errorf("scan discovery product card: %w", err)
+		}
+		cards = append(cards, card)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate discovery product cards: %w", err)
+	}
+	return cards, nil
 }
 
 func (r *DiscoveryRepository) getTrendingCandidates(ctx context.Context, limit int) ([]discovery.Candidate, error) {

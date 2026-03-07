@@ -177,7 +177,7 @@ func (s *Server) Start() error {
 	)
 
 	userService := userUsecase.NewUserService(userAddressRepo)
-	discoveryService := discoveryUsecase.NewDiscoveryService(discoveryRepo, categoryRepo)
+	discoveryService := discoveryUsecase.NewDiscoveryService(discoveryRepo, categoryRepo, redisClient)
 	metricsJobService := workerUsecase.NewMetricsJobService(discoveryRepo, s.cfg.WorkerMetricsInterval, zap.NewStdLog(logger))
 
 	// ----- Initialize Super Admin -----

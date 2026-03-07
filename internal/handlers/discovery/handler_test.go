@@ -16,7 +16,7 @@ import (
 
 type stubDiscoveryService struct {
 	feedReq        *discoverydomain.FeedRequest
-	feedResult     []discoverydomain.Candidate
+	feedResult     []discoverydomain.ProductCard
 	feedErr        error
 	suggestReq     *discoverydomain.SuggestRequest
 	suggestResult  []discoverydomain.Suggestion
@@ -28,7 +28,7 @@ type stubDiscoveryService struct {
 	searchClickErr error
 }
 
-func (s *stubDiscoveryService) GetFeedCandidates(_ context.Context, req *discoverydomain.FeedRequest) ([]discoverydomain.Candidate, error) {
+func (s *stubDiscoveryService) GetFeed(_ context.Context, req *discoverydomain.FeedRequest) ([]discoverydomain.ProductCard, error) {
 	s.feedReq = req
 	return s.feedResult, s.feedErr
 }
@@ -62,7 +62,7 @@ func TestGetFeedCandidatesUsesAuthenticatedIdentity(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	discoverySvc := &stubDiscoveryService{
-		feedResult: []discoverydomain.Candidate{{ProductID: 11}},
+		feedResult: []discoverydomain.ProductCard{{ProductID: 11, Name: "Phone"}},
 	}
 	handler := NewHandler(discoverySvc, &stubMetricsRunner{})
 

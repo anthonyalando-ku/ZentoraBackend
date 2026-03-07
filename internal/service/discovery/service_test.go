@@ -2,17 +2,25 @@ package discovery
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	categorydomain "zentora-service/internal/domain/category"
 	discoverydomain "zentora-service/internal/domain/discovery"
+
+	"github.com/redis/go-redis/v9"
 )
 
 type stubCandidateRepository struct {
 	called            bool
 	req               *discoverydomain.FeedRequest
 	result            []discoverydomain.Candidate
+	hydrateCalled     bool
+	hydrateIDs        []int64
+	hydrateResult     []discoverydomain.ProductCard
+	hydrateErr        error
 	err               error
 	suggestCalled     bool
 	suggestReq        *discoverydomain.SuggestRequest
@@ -31,6 +39,12 @@ func (s *stubCandidateRepository) GetFeedCandidates(_ context.Context, req *disc
 	s.called = true
 	s.req = req
 	return s.result, s.err
+}
+
+func (s *stubCandidateRepository) HydrateProductCards(_ context.Context, productIDs []int64) ([]discoverydomain.ProductCard, error) {
+	s.hydrateCalled = true
+	s.hydrateIDs = append([]int64(nil), productIDs...)
+	return s.hydrateResult, s.hydrateErr
 }
 
 func (s *stubCandidateRepository) Suggest(_ context.Context, req *discoverydomain.SuggestRequest) ([]discoverydomain.Suggestion, error) {
@@ -67,9 +81,9 @@ func (s *stubCategoryRepository) GetCategoryByID(_ context.Context, id int64) (*
 func TestDiscoveryServiceGetFeedCandidatesValidatesRequest(t *testing.T) {
 	svc := NewDiscoveryService(&stubCandidateRepository{}, &stubCategoryRepository{})
 
-	_, err := svc.GetFeedCandidates(context.Background(), nil)
+	_, err := svc.GetFeed(context.Background(), nil)
 	if !errors.Is(err, discoverydomain.ErrInvalidRequest) {
-		t.Fatalf("GetFeedCandidates() error = %v, want %v", err, discoverydomain.ErrInvalidRequest)
+		t.Fatalf("GetFeed() error = %v, want %v", err, discoverydomain.ErrInvalidRequest)
 	}
 }
 
@@ -79,12 +93,12 @@ func TestDiscoveryServiceGetFeedCandidatesChecksCategoryExists(t *testing.T) {
 	categoryRepo := &stubCategoryRepository{err: categorydomain.ErrNotFound}
 	svc := NewDiscoveryService(candidateRepo, categoryRepo)
 
-	_, err := svc.GetFeedCandidates(context.Background(), &discoverydomain.FeedRequest{
+	_, err := svc.GetFeed(context.Background(), &discoverydomain.FeedRequest{
 		FeedType:   discoverydomain.FeedCategory,
 		CategoryID: &categoryID,
 	})
 	if !errors.Is(err, categorydomain.ErrNotFound) {
-		t.Fatalf("GetFeedCandidates() error = %v, want %v", err, categorydomain.ErrNotFound)
+		t.Fatalf("GetFeed() error = %v, want %v", err, categorydomain.ErrNotFound)
 	}
 	if !categoryRepo.called {
 		t.Fatal("expected category repository to be called")
@@ -96,19 +110,23 @@ func TestDiscoveryServiceGetFeedCandidatesChecksCategoryExists(t *testing.T) {
 
 func TestDiscoveryServiceGetFeedCandidatesPassesCategoryFeedToRepository(t *testing.T) {
 	categoryID := int64(7)
-	expected := []discoverydomain.Candidate{
-		{ProductID: 101, Signals: map[string]float64{"category_score": 1}},
+	candidateRepo := &stubCandidateRepository{
+		result: []discoverydomain.Candidate{
+			{ProductID: 101, Signals: map[string]float64{"category_score": 1}},
+		},
+		hydrateResult: []discoverydomain.ProductCard{
+			{ProductID: 101, Name: "Phone", Slug: "phone"},
+		},
 	}
-	candidateRepo := &stubCandidateRepository{result: expected}
 	categoryRepo := &stubCategoryRepository{category: &categorydomain.Category{ID: categoryID}}
 	svc := NewDiscoveryService(candidateRepo, categoryRepo)
 
-	got, err := svc.GetFeedCandidates(context.Background(), &discoverydomain.FeedRequest{
+	got, err := svc.GetFeed(context.Background(), &discoverydomain.FeedRequest{
 		FeedType:   discoverydomain.FeedCategory,
 		CategoryID: &categoryID,
 	})
 	if err != nil {
-		t.Fatalf("GetFeedCandidates() error = %v", err)
+		t.Fatalf("GetFeed() error = %v", err)
 	}
 	if !categoryRepo.called {
 		t.Fatal("expected category repository to be called")
@@ -122,24 +140,31 @@ func TestDiscoveryServiceGetFeedCandidatesPassesCategoryFeedToRepository(t *test
 	if candidateRepo.req == nil || candidateRepo.req.CategoryID == nil || *candidateRepo.req.CategoryID != categoryID {
 		t.Fatalf("repository request category_id = %v, want %d", candidateRepo.req, categoryID)
 	}
-	if len(got) != len(expected) || got[0].ProductID != expected[0].ProductID {
-		t.Fatalf("GetFeedCandidates() = %#v, want %#v", got, expected)
+	if !candidateRepo.hydrateCalled {
+		t.Fatal("expected hydrate method to be called")
+	}
+	if len(got) != 1 || got[0].ProductID != 101 {
+		t.Fatalf("GetFeed() = %#v, want hydrated product card", got)
 	}
 }
 
 func TestDiscoveryServiceGetFeedCandidatesSkipsCategoryLookupForNonCategoryFeed(t *testing.T) {
-	expected := []discoverydomain.Candidate{
-		{ProductID: 1, Signals: map[string]float64{"trending_score": 5}},
+	candidateRepo := &stubCandidateRepository{
+		result: []discoverydomain.Candidate{
+			{ProductID: 1, Signals: map[string]float64{"trending_score": 5}},
+		},
+		hydrateResult: []discoverydomain.ProductCard{
+			{ProductID: 1, Name: "Laptop"},
+		},
 	}
-	candidateRepo := &stubCandidateRepository{result: expected}
 	categoryRepo := &stubCategoryRepository{}
 	svc := NewDiscoveryService(candidateRepo, categoryRepo)
 
-	got, err := svc.GetFeedCandidates(context.Background(), &discoverydomain.FeedRequest{
+	got, err := svc.GetFeed(context.Background(), &discoverydomain.FeedRequest{
 		FeedType: discoverydomain.FeedTrending,
 	})
 	if err != nil {
-		t.Fatalf("GetFeedCandidates() error = %v", err)
+		t.Fatalf("GetFeed() error = %v", err)
 	}
 	if categoryRepo.called {
 		t.Fatal("expected category repository not to be called")
@@ -147,8 +172,11 @@ func TestDiscoveryServiceGetFeedCandidatesSkipsCategoryLookupForNonCategoryFeed(
 	if !candidateRepo.called {
 		t.Fatal("expected discovery repository to be called")
 	}
-	if len(got) != len(expected) || got[0].ProductID != expected[0].ProductID {
-		t.Fatalf("GetFeedCandidates() = %#v, want %#v", got, expected)
+	if !candidateRepo.hydrateCalled {
+		t.Fatal("expected hydrate method to be called")
+	}
+	if len(got) != 1 || got[0].ProductID != 1 {
+		t.Fatalf("GetFeed() = %#v, want hydrated product card", got)
 	}
 }
 
@@ -156,11 +184,11 @@ func TestDiscoveryServiceGetFeedCandidatesRequiresUserForRecommendedFeed(t *test
 	candidateRepo := &stubCandidateRepository{}
 	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{})
 
-	_, err := svc.GetFeedCandidates(context.Background(), &discoverydomain.FeedRequest{
+	_, err := svc.GetFeed(context.Background(), &discoverydomain.FeedRequest{
 		FeedType: discoverydomain.FeedRecommended,
 	})
 	if !errors.Is(err, discoverydomain.ErrUserRequired) {
-		t.Fatalf("GetFeedCandidates() error = %v, want %v", err, discoverydomain.ErrUserRequired)
+		t.Fatalf("GetFeed() error = %v, want %v", err, discoverydomain.ErrUserRequired)
 	}
 	if candidateRepo.called {
 		t.Fatal("expected discovery repository not to be called when recommended feed is invalid")
@@ -169,18 +197,22 @@ func TestDiscoveryServiceGetFeedCandidatesRequiresUserForRecommendedFeed(t *test
 
 func TestDiscoveryServiceGetFeedCandidatesPassesAlsoViewedFeedToRepository(t *testing.T) {
 	sessionID := "  session-9  "
-	expected := []discoverydomain.Candidate{
-		{ProductID: 22, Signals: map[string]float64{"co_view_score": 0.7}},
+	candidateRepo := &stubCandidateRepository{
+		result: []discoverydomain.Candidate{
+			{ProductID: 22, Signals: map[string]float64{"co_view_score": 0.7}},
+		},
+		hydrateResult: []discoverydomain.ProductCard{
+			{ProductID: 22, Name: "Camera"},
+		},
 	}
-	candidateRepo := &stubCandidateRepository{result: expected}
 	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{})
 
-	got, err := svc.GetFeedCandidates(context.Background(), &discoverydomain.FeedRequest{
+	got, err := svc.GetFeed(context.Background(), &discoverydomain.FeedRequest{
 		FeedType:  discoverydomain.FeedAlsoViewed,
 		SessionID: &sessionID,
 	})
 	if err != nil {
-		t.Fatalf("GetFeedCandidates() error = %v", err)
+		t.Fatalf("GetFeed() error = %v", err)
 	}
 	if !candidateRepo.called {
 		t.Fatal("expected discovery repository to be called")
@@ -188,8 +220,86 @@ func TestDiscoveryServiceGetFeedCandidatesPassesAlsoViewedFeedToRepository(t *te
 	if candidateRepo.req == nil || candidateRepo.req.SessionID == nil || *candidateRepo.req.SessionID != "session-9" {
 		t.Fatalf("repository request session_id = %#v, want %q", candidateRepo.req, "session-9")
 	}
-	if len(got) != len(expected) || got[0].ProductID != expected[0].ProductID {
-		t.Fatalf("GetFeedCandidates() = %#v, want %#v", got, expected)
+	if len(got) != 1 || got[0].ProductID != 22 {
+		t.Fatalf("GetFeed() = %#v, want hydrated product card", got)
+	}
+}
+
+type stubCacheClient struct {
+	values map[string][]byte
+	gets   int
+	sets   int
+}
+
+func (s *stubCacheClient) Get(_ context.Context, key string) *redis.StringCmd {
+	s.gets++
+	if s.values == nil {
+		s.values = make(map[string][]byte)
+	}
+	if value, ok := s.values[key]; ok {
+		return redis.NewStringResult(string(value), nil)
+	}
+	return redis.NewStringResult("", redis.Nil)
+}
+
+func (s *stubCacheClient) Set(_ context.Context, key string, value interface{}, _ time.Duration) *redis.StatusCmd {
+	s.sets++
+	if s.values == nil {
+		s.values = make(map[string][]byte)
+	}
+	switch typed := value.(type) {
+	case []byte:
+		s.values[key] = append([]byte(nil), typed...)
+	default:
+		encoded, _ := json.Marshal(typed)
+		s.values[key] = encoded
+	}
+	return redis.NewStatusResult("OK", nil)
+}
+
+func TestDiscoveryServiceGetFeedUsesCacheForHotFeeds(t *testing.T) {
+	cache := &stubCacheClient{}
+	req := &discoverydomain.FeedRequest{FeedType: discoverydomain.FeedTrending}
+	if err := req.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	key := buildFeedCacheKey(req)
+	cached := []discoverydomain.ProductCard{{ProductID: 33, Name: "Cached"}}
+	payload, _ := json.Marshal(cached)
+	cache.values = map[string][]byte{key: payload}
+
+	candidateRepo := &stubCandidateRepository{}
+	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{}, cache)
+
+	got, err := svc.GetFeed(context.Background(), req)
+	if err != nil {
+		t.Fatalf("GetFeed() error = %v", err)
+	}
+	if candidateRepo.called {
+		t.Fatal("expected candidate repository not to be called on cache hit")
+	}
+	if len(got) != 1 || got[0].ProductID != 33 {
+		t.Fatalf("GetFeed() = %#v, want cached cards", got)
+	}
+}
+
+func TestDiscoveryServiceGetFeedStoresHotFeedInCache(t *testing.T) {
+	cache := &stubCacheClient{}
+	candidateRepo := &stubCandidateRepository{
+		result:        []discoverydomain.Candidate{{ProductID: 88}},
+		hydrateResult: []discoverydomain.ProductCard{{ProductID: 88, Name: "Fresh"}},
+	}
+	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{}, cache)
+
+	got, err := svc.GetFeed(context.Background(), &discoverydomain.FeedRequest{FeedType: discoverydomain.FeedTrending})
+	if err != nil {
+		t.Fatalf("GetFeed() error = %v", err)
+	}
+	if len(got) != 1 || got[0].ProductID != 88 {
+		t.Fatalf("GetFeed() = %#v, want hydrated cards", got)
+	}
+	if cache.sets == 0 {
+		t.Fatal("expected feed result to be stored in cache")
 	}
 }
 
