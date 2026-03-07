@@ -225,8 +225,14 @@ func TestSearchBuildsFeedSearchRequest(t *testing.T) {
 	if discoverySvc.feedReq.Limit != 10 {
 		t.Fatalf("feed limit = %d, want 10", discoverySvc.feedReq.Limit)
 	}
-	if len(discoverySvc.feedReq.Filters.BrandIDs) != 2 || discoverySvc.feedReq.Filters.BrandIDs[0] != 3 || discoverySvc.feedReq.Filters.BrandIDs[1] != 1 {
-		t.Fatalf("brand filters = %#v, want parsed ids", discoverySvc.feedReq.Filters.BrandIDs)
+	if len(discoverySvc.feedReq.Filters.BrandIDs) != 2 {
+		t.Fatalf("brand filter count = %d, want 2", len(discoverySvc.feedReq.Filters.BrandIDs))
+	}
+	if discoverySvc.feedReq.Filters.BrandIDs[0] != 3 {
+		t.Fatalf("first brand filter = %d, want 3", discoverySvc.feedReq.Filters.BrandIDs[0])
+	}
+	if discoverySvc.feedReq.Filters.BrandIDs[1] != 1 {
+		t.Fatalf("second brand filter = %d, want 1", discoverySvc.feedReq.Filters.BrandIDs[1])
 	}
 }
 
