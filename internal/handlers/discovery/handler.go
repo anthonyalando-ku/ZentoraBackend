@@ -80,6 +80,35 @@ func (h *Handler) Suggest(c *gin.Context) {
 	})
 }
 
+func (h *Handler) Search(c *gin.Context) {
+	query := strings.TrimSpace(c.Query("query"))
+	if query == "" {
+		response.Error(c, http.StatusBadRequest, "query parameter is required", discoverydomain.ErrQueryRequired)
+		return
+	}
+
+	req, err := buildFeedRequest(c)
+	if err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid query parameters", err)
+		return
+	}
+
+	req.FeedType = discoverydomain.FeedSearch
+	req.Query = &query
+
+	items, err := h.discovery.GetFeed(c.Request.Context(), req)
+	if err != nil {
+		handleError(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "search results retrieved", gin.H{
+		"query": query,
+		"limit": req.Limit,
+		"items": items,
+	})
+}
+
 type trackSearchRequest struct {
 	Query       string                      `json:"query"`
 	SessionID   *string                     `json:"session_id"`

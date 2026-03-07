@@ -143,6 +143,7 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 	discoveryRoutes.Use(h.AuthMiddleware.OptionalAuth())
 	{
 		discoveryRoutes.GET("/feed", h.DiscoveryHandler.GetFeedCandidates)
+		discoveryRoutes.GET("/search", h.DiscoveryHandler.Search)
 		discoveryRoutes.GET("/suggest", h.DiscoveryHandler.Suggest)
 		discoveryRoutes.POST("/search/events", h.DiscoveryHandler.TrackSearch)
 		discoveryRoutes.POST("/search/clicks", h.DiscoveryHandler.TrackSearchClick)

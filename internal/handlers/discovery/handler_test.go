@@ -171,6 +171,65 @@ func TestSuggestParsesPrefixAndLimit(t *testing.T) {
 	}
 }
 
+func TestSearchRequiresQuery(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	discoverySvc := &stubDiscoveryService{}
+	handler := NewHandler(discoverySvc, &stubMetricsRunner{})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/discovery/search", nil)
+
+	handler.Search(ctx)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusBadRequest)
+	}
+	if discoverySvc.feedReq != nil {
+		t.Fatalf("expected discovery service not to be called, got %#v", discoverySvc.feedReq)
+	}
+}
+
+func TestSearchBuildsFeedSearchRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	discoverySvc := &stubDiscoveryService{
+		feedResult: []discoverydomain.ProductCard{{ProductID: 11, Name: "Phone"}},
+	}
+	handler := NewHandler(discoverySvc, &stubMetricsRunner{})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/discovery/search?query=samsung+phone&limit=10&brand_ids=3,1",
+		nil,
+	)
+	ctx.Request = req
+
+	handler.Search(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if discoverySvc.feedReq == nil {
+		t.Fatal("expected discovery service to receive feed request")
+	}
+	if discoverySvc.feedReq.FeedType != discoverydomain.FeedSearch {
+		t.Fatalf("feed type = %q, want %q", discoverySvc.feedReq.FeedType, discoverydomain.FeedSearch)
+	}
+	if discoverySvc.feedReq.Query == nil || *discoverySvc.feedReq.Query != "samsung phone" {
+		t.Fatalf("feed query = %#v, want trimmed search query", discoverySvc.feedReq.Query)
+	}
+	if discoverySvc.feedReq.Limit != 10 {
+		t.Fatalf("feed limit = %d, want 10", discoverySvc.feedReq.Limit)
+	}
+	if len(discoverySvc.feedReq.Filters.BrandIDs) != 2 || discoverySvc.feedReq.Filters.BrandIDs[0] != 3 || discoverySvc.feedReq.Filters.BrandIDs[1] != 1 {
+		t.Fatalf("brand filters = %#v, want parsed ids", discoverySvc.feedReq.Filters.BrandIDs)
+	}
+}
+
 func TestTrackSearchClickUsesAuthenticatedIdentity(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
