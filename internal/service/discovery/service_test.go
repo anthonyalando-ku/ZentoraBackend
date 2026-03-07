@@ -10,16 +10,26 @@ import (
 )
 
 type stubCandidateRepository struct {
-	called bool
-	req    *discoverydomain.FeedRequest
-	result []discoverydomain.Candidate
-	err    error
+	called        bool
+	req           *discoverydomain.FeedRequest
+	result        []discoverydomain.Candidate
+	err           error
+	suggestCalled bool
+	suggestReq    *discoverydomain.SuggestRequest
+	suggestResult []discoverydomain.Suggestion
+	suggestErr    error
 }
 
 func (s *stubCandidateRepository) GetFeedCandidates(_ context.Context, req *discoverydomain.FeedRequest) ([]discoverydomain.Candidate, error) {
 	s.called = true
 	s.req = req
 	return s.result, s.err
+}
+
+func (s *stubCandidateRepository) Suggest(_ context.Context, req *discoverydomain.SuggestRequest) ([]discoverydomain.Suggestion, error) {
+	s.suggestCalled = true
+	s.suggestReq = req
+	return s.suggestResult, s.suggestErr
 }
 
 type stubCategoryRepository struct {
@@ -120,5 +130,40 @@ func TestDiscoveryServiceGetFeedCandidatesSkipsCategoryLookupForNonCategoryFeed(
 	}
 	if len(got) != len(expected) || got[0].ProductID != expected[0].ProductID {
 		t.Fatalf("GetFeedCandidates() = %#v, want %#v", got, expected)
+	}
+}
+
+func TestDiscoveryServiceSuggestValidatesRequest(t *testing.T) {
+	svc := NewDiscoveryService(&stubCandidateRepository{}, &stubCategoryRepository{})
+
+	_, err := svc.Suggest(context.Background(), &discoverydomain.SuggestRequest{Prefix: "   "})
+	if !errors.Is(err, discoverydomain.ErrPrefixRequired) {
+		t.Fatalf("Suggest() error = %v, want %v", err, discoverydomain.ErrPrefixRequired)
+	}
+}
+
+func TestDiscoveryServiceSuggestDelegatesToRepository(t *testing.T) {
+	expected := []discoverydomain.Suggestion{
+		{
+			Text:            "electronics",
+			Type:            discoverydomain.SuggestionTypeCategory,
+			PopularityScore: 3.5,
+		},
+	}
+	candidateRepo := &stubCandidateRepository{suggestResult: expected}
+	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{})
+
+	got, err := svc.Suggest(context.Background(), &discoverydomain.SuggestRequest{Prefix: "  elec  "})
+	if err != nil {
+		t.Fatalf("Suggest() error = %v", err)
+	}
+	if !candidateRepo.suggestCalled {
+		t.Fatal("expected discovery repository suggest method to be called")
+	}
+	if candidateRepo.suggestReq == nil || candidateRepo.suggestReq.Prefix != "elec" {
+		t.Fatalf("repository suggest prefix = %#v, want %q", candidateRepo.suggestReq, "elec")
+	}
+	if len(got) != len(expected) || got[0].Text != expected[0].Text {
+		t.Fatalf("Suggest() = %#v, want %#v", got, expected)
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 type candidateRepository interface {
 	GetFeedCandidates(ctx context.Context, req *discoverydomain.FeedRequest) ([]discoverydomain.Candidate, error)
+	Suggest(ctx context.Context, req *discoverydomain.SuggestRequest) ([]discoverydomain.Suggestion, error)
 }
 
 type categoryRepository interface {
@@ -44,4 +45,16 @@ func (s *DiscoveryService) GetFeedCandidates(ctx context.Context, req *discovery
 		return nil, fmt.Errorf("get discovery feed candidates: %w", err)
 	}
 	return candidates, nil
+}
+
+func (s *DiscoveryService) Suggest(ctx context.Context, req *discoverydomain.SuggestRequest) ([]discoverydomain.Suggestion, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	suggestions, err := s.discoveryRepo.Suggest(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("suggest discovery terms: %w", err)
+	}
+	return suggestions, nil
 }

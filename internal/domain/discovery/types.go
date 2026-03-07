@@ -20,8 +20,10 @@ const (
 )
 
 const (
-	DefaultFeedLimit = 20
-	MaxFeedLimit     = 100
+	DefaultFeedLimit    = 20
+	MaxFeedLimit        = 100
+	DefaultSuggestLimit = 10
+	MaxSuggestLimit     = 20
 )
 
 type FeedFilter struct {
@@ -88,4 +90,45 @@ func (r *FeedRequest) Validate() error {
 type Candidate struct {
 	ProductID int64
 	Signals   map[string]float64
+}
+
+type SuggestionType string
+
+const (
+	SuggestionTypeProduct  SuggestionType = "product"
+	SuggestionTypeCategory SuggestionType = "category"
+	SuggestionTypeBrand    SuggestionType = "brand"
+	SuggestionTypeQuery    SuggestionType = "query"
+)
+
+type SuggestRequest struct {
+	Prefix string
+	Limit  int
+}
+
+func (r *SuggestRequest) Validate() error {
+	if r == nil {
+		return ErrInvalidRequest
+	}
+
+	r.Prefix = strings.TrimSpace(r.Prefix)
+	if r.Prefix == "" {
+		return ErrPrefixRequired
+	}
+
+	if r.Limit <= 0 {
+		r.Limit = DefaultSuggestLimit
+	}
+	if r.Limit > MaxSuggestLimit {
+		r.Limit = MaxSuggestLimit
+	}
+
+	return nil
+}
+
+type Suggestion struct {
+	Text            string
+	Type            SuggestionType
+	ReferenceID     *int64
+	PopularityScore float64
 }

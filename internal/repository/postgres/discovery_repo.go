@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"zentora-service/internal/domain/discovery"
@@ -14,6 +15,16 @@ import (
 type DiscoveryRepository struct {
 	db *pgxpool.Pool
 }
+
+const (
+	defaultSearchTextConfig = "simple"
+	searchTextWeight        = 0.50
+	searchPopularityWeight  = 0.20
+	searchConversionWeight  = 0.15
+	searchRatingWeight      = 0.10
+	searchTrendingWeight    = 0.05
+	suggestPrefixBoost      = 2.0
+)
 
 func NewDiscoveryRepository(db *pgxpool.Pool) *DiscoveryRepository {
 	return &DiscoveryRepository{db: db}
@@ -41,6 +52,8 @@ func (r *DiscoveryRepository) GetFeedCandidates(ctx context.Context, req *discov
 		return r.getMostWishlistedCandidates(ctx, req.Limit)
 	case discovery.FeedFeatured:
 		return r.getFeaturedCandidates(ctx, req.Limit)
+	case discovery.FeedSearch:
+		return r.getSearchCandidates(ctx, *req.Query, req.Limit)
 	default:
 		return nil, discovery.ErrFeedNotImplemented
 	}
@@ -257,6 +270,205 @@ func (r *DiscoveryRepository) getFeaturedCandidates(ctx context.Context, limit i
 	defer rows.Close()
 
 	return scanCandidatesWithSignals(rows, "merchandising_score", "freshness_score")
+}
+
+func (r *DiscoveryRepository) getSearchCandidates(ctx context.Context, query string, limit int) ([]discovery.Candidate, error) {
+	const q = `
+		WITH search_input AS (
+			SELECT LOWER($1) AS normalized_query,
+			       websearch_to_tsquery($3::regconfig, LOWER($1)) AS ts_query
+		),
+		fts_candidates AS (
+			SELECT psd.product_id,
+			       ts_rank_cd(psd.search_vector, si.ts_query)::DOUBLE PRECISION AS text_relevance
+			FROM product_search_documents psd
+			CROSS JOIN search_input si
+			JOIN products p ON p.id = psd.product_id
+			WHERE p.status = $2
+			  AND psd.search_vector @@ si.ts_query
+		),
+		trigram_candidates AS (
+			SELECT psd.product_id,
+			       GREATEST(
+			           similarity(LOWER(psd.search_document), si.normalized_query),
+			           similarity(LOWER(p.name), si.normalized_query)
+			       )::DOUBLE PRECISION AS text_relevance
+			FROM product_search_documents psd
+			CROSS JOIN search_input si
+			JOIN products p ON p.id = psd.product_id
+			WHERE p.status = $2
+			  AND (
+			      LOWER(p.name) LIKE si.normalized_query || '%'
+			      OR LOWER(psd.search_document) LIKE si.normalized_query || '%'
+			      OR LOWER(psd.search_document) % si.normalized_query
+			  )
+		),
+		ranked AS (
+			SELECT c.product_id,
+			       MAX(c.text_relevance) AS text_relevance
+			FROM (
+				SELECT * FROM fts_candidates
+				UNION ALL
+				SELECT * FROM trigram_candidates
+			) c
+			GROUP BY c.product_id
+		)
+		SELECT r.product_id,
+		       r.text_relevance,
+		       COALESCE(pm.weekly_purchases, 0)::DOUBLE PRECISION AS popularity_score,
+		       COALESCE(pm.conversion_rate, 0)::DOUBLE PRECISION AS conversion_rate,
+		       p.rating::DOUBLE PRECISION AS rating_score,
+		       COALESCE(pm.trending_score, 0)::DOUBLE PRECISION AS trending_score
+		FROM ranked r
+		JOIN products p ON p.id = r.product_id
+		LEFT JOIN product_metrics pm ON pm.product_id = r.product_id
+		ORDER BY
+			($4 * r.text_relevance)
+			+ ($5 * COALESCE(pm.weekly_purchases, 0)::DOUBLE PRECISION)
+			+ ($6 * COALESCE(pm.conversion_rate, 0)::DOUBLE PRECISION)
+			+ ($7 * p.rating::DOUBLE PRECISION)
+			+ ($8 * COALESCE(pm.trending_score, 0)::DOUBLE PRECISION) DESC,
+			r.product_id DESC
+		LIMIT $9`
+
+	rows, err := r.db.Query(
+		ctx,
+		q,
+		query,
+		product.StatusActive,
+		defaultSearchTextConfig,
+		searchTextWeight,
+		searchPopularityWeight,
+		searchConversionWeight,
+		searchRatingWeight,
+		searchTrendingWeight,
+		limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("get search candidates: %w", err)
+	}
+	defer rows.Close()
+
+	return scanCandidatesWithSignals(rows, "text_relevance", "popularity_score", "conversion_rate", "rating_score", "trending_score")
+}
+
+func (r *DiscoveryRepository) Suggest(ctx context.Context, req *discovery.SuggestRequest) ([]discovery.Suggestion, error) {
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	const q = `
+		WITH input AS (
+			SELECT LOWER($1) AS prefix
+		),
+		product_matches AS (
+			SELECT p.name AS suggestion_text,
+			       'product'::TEXT AS suggestion_type,
+			       p.id AS reference_id,
+			       (
+			           CASE WHEN LOWER(p.name) LIKE i.prefix || '%' THEN $2 ELSE 0.0 END
+			           + similarity(LOWER(p.name), i.prefix)
+			           + (COALESCE(pm.weekly_views, 0)::DOUBLE PRECISION / 1000.0)
+			       ) AS popularity_score
+			FROM products p
+			CROSS JOIN input i
+			LEFT JOIN product_metrics pm ON pm.product_id = p.id
+			WHERE p.status = $3
+			  AND (
+			      LOWER(p.name) LIKE i.prefix || '%'
+			      OR LOWER(p.name) % i.prefix
+			  )
+			ORDER BY popularity_score DESC, p.id DESC
+			LIMIT $4
+		),
+		category_matches AS (
+			SELECT c.name AS suggestion_text,
+			       'category'::TEXT AS suggestion_type,
+			       c.id AS reference_id,
+			       (
+			           CASE WHEN LOWER(c.name) LIKE i.prefix || '%' THEN $2 ELSE 0.0 END
+			           + similarity(LOWER(c.name), i.prefix)
+			       ) AS popularity_score
+			FROM product_categories c
+			CROSS JOIN input i
+			WHERE c.is_active = TRUE
+			  AND (
+			      LOWER(c.name) LIKE i.prefix || '%'
+			      OR LOWER(c.name) % i.prefix
+			  )
+			ORDER BY popularity_score DESC, c.id DESC
+			LIMIT $4
+		),
+		brand_matches AS (
+			SELECT b.name AS suggestion_text,
+			       'brand'::TEXT AS suggestion_type,
+			       b.id AS reference_id,
+			       (
+			           CASE WHEN LOWER(b.name) LIKE i.prefix || '%' THEN $2 ELSE 0.0 END
+			           + similarity(LOWER(b.name), i.prefix)
+			       ) AS popularity_score
+			FROM product_brands b
+			CROSS JOIN input i
+			WHERE b.is_active = TRUE
+			  AND (
+			      LOWER(b.name) LIKE i.prefix || '%'
+			      OR LOWER(b.name) % i.prefix
+			  )
+			ORDER BY popularity_score DESC, b.id DESC
+			LIMIT $4
+		),
+		query_matches AS (
+			SELECT se.normalized_query AS suggestion_text,
+			       'query'::TEXT AS suggestion_type,
+			       NULL::BIGINT AS reference_id,
+			       (
+			           COUNT(*)::DOUBLE PRECISION
+			           + CASE WHEN se.normalized_query LIKE i.prefix || '%' THEN $2 ELSE 0.0 END
+			       ) AS popularity_score
+			FROM search_events se
+			CROSS JOIN input i
+			WHERE se.normalized_query LIKE i.prefix || '%'
+			   OR se.normalized_query % i.prefix
+			GROUP BY se.normalized_query, i.prefix
+			ORDER BY popularity_score DESC, se.normalized_query ASC
+			LIMIT $4
+		)
+		SELECT suggestion_text, suggestion_type, reference_id, popularity_score
+		FROM (
+			SELECT * FROM product_matches
+			UNION ALL
+			SELECT * FROM category_matches
+			UNION ALL
+			SELECT * FROM brand_matches
+			UNION ALL
+			SELECT * FROM query_matches
+		) suggestions
+		ORDER BY popularity_score DESC, suggestion_text ASC
+		LIMIT $4`
+
+	rows, err := r.db.Query(ctx, q, req.Prefix, suggestPrefixBoost, product.StatusActive, req.Limit)
+	if err != nil {
+		return nil, fmt.Errorf("suggest discovery terms: %w", err)
+	}
+	defer rows.Close()
+
+	var suggestions []discovery.Suggestion
+	for rows.Next() {
+		var suggestion discovery.Suggestion
+		var referenceID sql.NullInt64
+		if err := rows.Scan(&suggestion.Text, &suggestion.Type, &referenceID, &suggestion.PopularityScore); err != nil {
+			return nil, fmt.Errorf("scan discovery suggestion: %w", err)
+		}
+		if referenceID.Valid {
+			id := referenceID.Int64
+			suggestion.ReferenceID = &id
+		}
+		suggestions = append(suggestions, suggestion)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate discovery suggestions: %w", err)
+	}
+	return suggestions, nil
 }
 
 func scanCandidatesWithSignals(rows pgx.Rows, signalNames ...string) ([]discovery.Candidate, error) {

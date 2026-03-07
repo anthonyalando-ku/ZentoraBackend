@@ -77,3 +77,36 @@ func TestFeedRequestValidateRejectsUnknownFeedType(t *testing.T) {
 		t.Fatalf("Validate() error = %v, want %v", err, ErrInvalidFeedType)
 	}
 }
+
+func TestSuggestRequestValidateDefaultsLimitAndTrimsPrefix(t *testing.T) {
+	req := &SuggestRequest{Prefix: "  elec  "}
+
+	if err := req.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if req.Prefix != "elec" {
+		t.Fatalf("Validate() prefix = %q, want %q", req.Prefix, "elec")
+	}
+	if req.Limit != DefaultSuggestLimit {
+		t.Fatalf("Validate() limit = %d, want %d", req.Limit, DefaultSuggestLimit)
+	}
+}
+
+func TestSuggestRequestValidateCapsLimit(t *testing.T) {
+	req := &SuggestRequest{Prefix: "elec", Limit: MaxSuggestLimit + 10}
+
+	if err := req.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if req.Limit != MaxSuggestLimit {
+		t.Fatalf("Validate() limit = %d, want %d", req.Limit, MaxSuggestLimit)
+	}
+}
+
+func TestSuggestRequestValidateRejectsBlankPrefix(t *testing.T) {
+	req := &SuggestRequest{Prefix: "   "}
+
+	if err := req.Validate(); err != ErrPrefixRequired {
+		t.Fatalf("Validate() error = %v, want %v", err, ErrPrefixRequired)
+	}
+}
