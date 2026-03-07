@@ -1,0 +1,124 @@
+package discovery
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	categorydomain "zentora-service/internal/domain/category"
+	discoverydomain "zentora-service/internal/domain/discovery"
+)
+
+type stubCandidateRepository struct {
+	called bool
+	req    *discoverydomain.FeedRequest
+	result []discoverydomain.Candidate
+	err    error
+}
+
+func (s *stubCandidateRepository) GetFeedCandidates(_ context.Context, req *discoverydomain.FeedRequest) ([]discoverydomain.Candidate, error) {
+	s.called = true
+	s.req = req
+	return s.result, s.err
+}
+
+type stubCategoryRepository struct {
+	called     bool
+	categoryID int64
+	category   *categorydomain.Category
+	err        error
+}
+
+func (s *stubCategoryRepository) GetCategoryByID(_ context.Context, id int64) (*categorydomain.Category, error) {
+	s.called = true
+	s.categoryID = id
+	return s.category, s.err
+}
+
+func TestDiscoveryServiceGetFeedCandidatesValidatesRequest(t *testing.T) {
+	svc := NewDiscoveryService(&stubCandidateRepository{}, &stubCategoryRepository{})
+
+	_, err := svc.GetFeedCandidates(context.Background(), nil)
+	if !errors.Is(err, discoverydomain.ErrInvalidRequest) {
+		t.Fatalf("GetFeedCandidates() error = %v, want %v", err, discoverydomain.ErrInvalidRequest)
+	}
+}
+
+func TestDiscoveryServiceGetFeedCandidatesChecksCategoryExists(t *testing.T) {
+	categoryID := int64(42)
+	candidateRepo := &stubCandidateRepository{}
+	categoryRepo := &stubCategoryRepository{err: categorydomain.ErrNotFound}
+	svc := NewDiscoveryService(candidateRepo, categoryRepo)
+
+	_, err := svc.GetFeedCandidates(context.Background(), &discoverydomain.FeedRequest{
+		FeedType:   discoverydomain.FeedCategory,
+		CategoryID: &categoryID,
+	})
+	if !errors.Is(err, categorydomain.ErrNotFound) {
+		t.Fatalf("GetFeedCandidates() error = %v, want %v", err, categorydomain.ErrNotFound)
+	}
+	if !categoryRepo.called {
+		t.Fatal("expected category repository to be called")
+	}
+	if candidateRepo.called {
+		t.Fatal("expected discovery repository not to be called when category lookup fails")
+	}
+}
+
+func TestDiscoveryServiceGetFeedCandidatesPassesCategoryFeedToRepository(t *testing.T) {
+	categoryID := int64(7)
+	expected := []discoverydomain.Candidate{
+		{ProductID: 101, Signals: map[string]float64{"category_score": 1}},
+	}
+	candidateRepo := &stubCandidateRepository{result: expected}
+	categoryRepo := &stubCategoryRepository{category: &categorydomain.Category{ID: categoryID}}
+	svc := NewDiscoveryService(candidateRepo, categoryRepo)
+
+	got, err := svc.GetFeedCandidates(context.Background(), &discoverydomain.FeedRequest{
+		FeedType:   discoverydomain.FeedCategory,
+		CategoryID: &categoryID,
+	})
+	if err != nil {
+		t.Fatalf("GetFeedCandidates() error = %v", err)
+	}
+	if !categoryRepo.called {
+		t.Fatal("expected category repository to be called")
+	}
+	if categoryRepo.categoryID != categoryID {
+		t.Fatalf("category lookup id = %d, want %d", categoryRepo.categoryID, categoryID)
+	}
+	if !candidateRepo.called {
+		t.Fatal("expected discovery repository to be called")
+	}
+	if candidateRepo.req == nil || candidateRepo.req.CategoryID == nil || *candidateRepo.req.CategoryID != categoryID {
+		t.Fatalf("repository request category_id = %v, want %d", candidateRepo.req, categoryID)
+	}
+	if len(got) != len(expected) || got[0].ProductID != expected[0].ProductID {
+		t.Fatalf("GetFeedCandidates() = %#v, want %#v", got, expected)
+	}
+}
+
+func TestDiscoveryServiceGetFeedCandidatesSkipsCategoryLookupForNonCategoryFeed(t *testing.T) {
+	expected := []discoverydomain.Candidate{
+		{ProductID: 1, Signals: map[string]float64{"trending_score": 5}},
+	}
+	candidateRepo := &stubCandidateRepository{result: expected}
+	categoryRepo := &stubCategoryRepository{}
+	svc := NewDiscoveryService(candidateRepo, categoryRepo)
+
+	got, err := svc.GetFeedCandidates(context.Background(), &discoverydomain.FeedRequest{
+		FeedType: discoverydomain.FeedTrending,
+	})
+	if err != nil {
+		t.Fatalf("GetFeedCandidates() error = %v", err)
+	}
+	if categoryRepo.called {
+		t.Fatal("expected category repository not to be called")
+	}
+	if !candidateRepo.called {
+		t.Fatal("expected discovery repository to be called")
+	}
+	if len(got) != len(expected) || got[0].ProductID != expected[0].ProductID {
+		t.Fatalf("GetFeedCandidates() = %#v, want %#v", got, expected)
+	}
+}
