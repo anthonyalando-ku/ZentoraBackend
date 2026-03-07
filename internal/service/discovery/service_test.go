@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -16,12 +17,16 @@ import (
 type stubCandidateRepository struct {
 	called            bool
 	req               *discoverydomain.FeedRequest
+	reqs              []*discoverydomain.FeedRequest
+	feedCalls         []discoverydomain.FeedType
 	result            []discoverydomain.Candidate
+	resultsByFeed     map[discoverydomain.FeedType][]discoverydomain.Candidate
 	hydrateCalled     bool
 	hydrateIDs        []int64
 	hydrateResult     []discoverydomain.ProductCard
 	hydrateErr        error
 	err               error
+	errByFeed         map[discoverydomain.FeedType]error
 	suggestCalled     bool
 	suggestReq        *discoverydomain.SuggestRequest
 	suggestResult     []discoverydomain.Suggestion
@@ -38,6 +43,18 @@ type stubCandidateRepository struct {
 func (s *stubCandidateRepository) GetFeedCandidates(_ context.Context, req *discoverydomain.FeedRequest) ([]discoverydomain.Candidate, error) {
 	s.called = true
 	s.req = req
+	cloned := *req
+	cloned.Filters.BrandIDs = append([]int64(nil), req.Filters.BrandIDs...)
+	cloned.Filters.TagIDs = append([]int64(nil), req.Filters.TagIDs...)
+	cloned.Filters.VariantAttributeValueIDs = append([]int64(nil), req.Filters.VariantAttributeValueIDs...)
+	s.reqs = append(s.reqs, &cloned)
+	s.feedCalls = append(s.feedCalls, req.FeedType)
+	if err, ok := s.errByFeed[req.FeedType]; ok {
+		return nil, err
+	}
+	if result, ok := s.resultsByFeed[req.FeedType]; ok {
+		return result, nil
+	}
 	return s.result, s.err
 }
 
@@ -76,6 +93,13 @@ func (s *stubCategoryRepository) GetCategoryByID(_ context.Context, id int64) (*
 	s.called = true
 	s.categoryID = id
 	return s.category, s.err
+}
+
+func assertInt64SliceEqual(t *testing.T, got, want []int64, message string) {
+	t.Helper()
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("%s = %#v, want %#v", message, got, want)
+	}
 }
 
 func TestDiscoveryServiceGetFeedCandidatesValidatesRequest(t *testing.T) {
@@ -253,6 +277,90 @@ func TestDiscoveryServiceGetFeedCandidatesPassesAlsoViewedFeedToRepository(t *te
 	}
 	if len(got) != 1 || got[0].ProductID != 22 {
 		t.Fatalf("GetFeed() = %#v, want hydrated product card", got)
+	}
+}
+
+func TestDiscoveryServiceGetFeedBackfillsRecommendedWithTrendingAndBestSellers(t *testing.T) {
+	userID := int64(55)
+	candidateRepo := &stubCandidateRepository{
+		resultsByFeed: map[discoverydomain.FeedType][]discoverydomain.Candidate{
+			discoverydomain.FeedRecommended: {
+				{ProductID: 1},
+				{ProductID: 2},
+			},
+			discoverydomain.FeedTrending: {
+				{ProductID: 2},
+				{ProductID: 3},
+			},
+			discoverydomain.FeedBestSellers: {
+				{ProductID: 4},
+			},
+		},
+		hydrateResult: []discoverydomain.ProductCard{
+			{ProductID: 1, Name: "One"},
+			{ProductID: 2, Name: "Two"},
+			{ProductID: 3, Name: "Three"},
+			{ProductID: 4, Name: "Four"},
+		},
+	}
+	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{})
+
+	got, err := svc.GetFeed(context.Background(), &discoverydomain.FeedRequest{
+		FeedType: discoverydomain.FeedRecommended,
+		UserID:   &userID,
+		Limit:    4,
+	})
+	if err != nil {
+		t.Fatalf("GetFeed() error = %v", err)
+	}
+	if len(candidateRepo.feedCalls) != 3 {
+		t.Fatalf("feed call count = %d, want 3", len(candidateRepo.feedCalls))
+	}
+	if candidateRepo.feedCalls[0] != discoverydomain.FeedRecommended || candidateRepo.feedCalls[1] != discoverydomain.FeedTrending || candidateRepo.feedCalls[2] != discoverydomain.FeedBestSellers {
+		t.Fatalf("feed calls = %#v, want recommended -> trending -> best_sellers", candidateRepo.feedCalls)
+	}
+	assertInt64SliceEqual(t, candidateRepo.hydrateIDs, []int64{1, 2, 3, 4}, "hydrate ids")
+	if len(got) != 4 || got[3].ProductID != 4 {
+		t.Fatalf("GetFeed() = %#v, want 4 hydrated cards", got)
+	}
+}
+
+func TestDiscoveryServiceGetFeedBackfillsAlsoViewedUntilTrendingFillsLimit(t *testing.T) {
+	sessionID := "session-7"
+	candidateRepo := &stubCandidateRepository{
+		resultsByFeed: map[discoverydomain.FeedType][]discoverydomain.Candidate{
+			discoverydomain.FeedAlsoViewed: nil,
+			discoverydomain.FeedTrending: {
+				{ProductID: 11},
+				{ProductID: 12},
+				{ProductID: 13},
+			},
+		},
+		hydrateResult: []discoverydomain.ProductCard{
+			{ProductID: 11, Name: "Eleven"},
+			{ProductID: 12, Name: "Twelve"},
+			{ProductID: 13, Name: "Thirteen"},
+		},
+	}
+	svc := NewDiscoveryService(candidateRepo, &stubCategoryRepository{})
+
+	got, err := svc.GetFeed(context.Background(), &discoverydomain.FeedRequest{
+		FeedType:  discoverydomain.FeedAlsoViewed,
+		SessionID: &sessionID,
+		Limit:     3,
+	})
+	if err != nil {
+		t.Fatalf("GetFeed() error = %v", err)
+	}
+	if len(candidateRepo.feedCalls) != 2 {
+		t.Fatalf("feed call count = %d, want 2", len(candidateRepo.feedCalls))
+	}
+	if candidateRepo.feedCalls[0] != discoverydomain.FeedAlsoViewed || candidateRepo.feedCalls[1] != discoverydomain.FeedTrending {
+		t.Fatalf("feed calls = %#v, want also_viewed -> trending", candidateRepo.feedCalls)
+	}
+	assertInt64SliceEqual(t, candidateRepo.hydrateIDs, []int64{11, 12, 13}, "hydrate ids")
+	if len(got) != 3 || got[0].ProductID != 11 {
+		t.Fatalf("GetFeed() = %#v, want hydrated backfill cards", got)
 	}
 }
 

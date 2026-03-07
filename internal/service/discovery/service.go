@@ -66,9 +66,9 @@ func (s *DiscoveryService) GetFeed(ctx context.Context, req *discoverydomain.Fee
 		return cached, nil
 	}
 
-	candidates, err := s.discoveryRepo.GetFeedCandidates(ctx, req)
+	candidates, err := s.getFeedCandidatesWithFallback(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("get discovery feed candidates: %w", err)
+		return nil, err
 	}
 	productIDs := make([]int64, 0, len(candidates))
 	for _, candidate := range candidates {
@@ -81,6 +81,52 @@ func (s *DiscoveryService) GetFeed(ctx context.Context, req *discoverydomain.Fee
 	}
 	s.storeCachedFeed(ctx, req, cards)
 	return cards, nil
+}
+
+func (s *DiscoveryService) getFeedCandidatesWithFallback(ctx context.Context, req *discoverydomain.FeedRequest) ([]discoverydomain.Candidate, error) {
+	candidates, err := s.discoveryRepo.GetFeedCandidates(ctx, req)
+	if err != nil {
+		return nil, fmt.Errorf("get discovery feed candidates: %w", err)
+	}
+
+	fallbackFeedTypes := feedFallbackOrder(req.FeedType)
+	if len(fallbackFeedTypes) == 0 || len(candidates) >= req.Limit {
+		return candidates, nil
+	}
+
+	merged := append([]discoverydomain.Candidate(nil), candidates...)
+	seen := make(map[int64]struct{}, len(merged))
+	for _, candidate := range merged {
+		seen[candidate.ProductID] = struct{}{}
+	}
+
+	for _, fallbackFeedType := range fallbackFeedTypes {
+		if len(merged) >= req.Limit {
+			break
+		}
+
+		fallbackReq := cloneFeedRequest(req)
+		fallbackReq.FeedType = fallbackFeedType
+		fallbackReq.Limit = req.Limit - len(merged)
+
+		fallbackCandidates, err := s.discoveryRepo.GetFeedCandidates(ctx, fallbackReq)
+		if err != nil {
+			return nil, fmt.Errorf("get fallback discovery feed candidates for %s: %w", fallbackFeedType, err)
+		}
+
+		for _, candidate := range fallbackCandidates {
+			if _, ok := seen[candidate.ProductID]; ok {
+				continue
+			}
+			seen[candidate.ProductID] = struct{}{}
+			merged = append(merged, candidate)
+			if len(merged) >= req.Limit {
+				break
+			}
+		}
+	}
+
+	return merged, nil
 }
 
 func (s *DiscoveryService) Suggest(ctx context.Context, req *discoverydomain.SuggestRequest) ([]discoverydomain.Suggestion, error) {
@@ -221,4 +267,28 @@ func buildFeedCacheKey(req *discoverydomain.FeedRequest) string {
 
 func formatCacheFloat(value float64) string {
 	return strconv.FormatFloat(value, 'f', 2, 64)
+}
+
+func feedFallbackOrder(feedType discoverydomain.FeedType) []discoverydomain.FeedType {
+	switch feedType {
+	case discoverydomain.FeedRecommended, discoverydomain.FeedAlsoViewed:
+		return []discoverydomain.FeedType{
+			discoverydomain.FeedTrending,
+			discoverydomain.FeedBestSellers,
+		}
+	default:
+		return nil
+	}
+}
+
+func cloneFeedRequest(req *discoverydomain.FeedRequest) *discoverydomain.FeedRequest {
+	if req == nil {
+		return nil
+	}
+
+	cloned := *req
+	cloned.Filters.BrandIDs = append([]int64(nil), req.Filters.BrandIDs...)
+	cloned.Filters.TagIDs = append([]int64(nil), req.Filters.TagIDs...)
+	cloned.Filters.VariantAttributeValueIDs = append([]int64(nil), req.Filters.VariantAttributeValueIDs...)
+	return &cloned
 }
