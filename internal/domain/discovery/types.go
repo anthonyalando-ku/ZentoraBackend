@@ -11,7 +11,6 @@ const (
 	FeedTrending       FeedType = "trending"
 	FeedBestSellers    FeedType = "best_sellers"
 	FeedRecommended    FeedType = "recommended"
-	FeedCategory       FeedType = "category"
 	FeedDeals          FeedType = "deals"
 	FeedNewArrivals    FeedType = "new_arrivals"
 	FeedHighlyRated    FeedType = "highly_rated"
@@ -20,6 +19,8 @@ const (
 	FeedFeatured       FeedType = "featured"
 	FeedEditorial      FeedType = "editorial"
 	FeedSearch         FeedType = "search"
+	FeedCategory       FeedType = "category"
+
 )
 
 const (
