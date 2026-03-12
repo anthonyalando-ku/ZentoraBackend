@@ -160,7 +160,7 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 		catalogPublic.GET("/products/:id/variants", h.CatalogHandler.ListVariantsByProduct)
 		catalogPublic.GET("/products/:id/variants/:variant_id", h.CatalogHandler.GetVariant)
 		catalogPublic.GET("/products/:id/variants/:variant_id/attribute-values", h.CatalogHandler.GetVariantAttributeValues)
-
+		catalogPublic.GET("/products/:id/reviews", h.ReviewHandler.ListProductReviews)
 		// Inventory (public stock reads)
 		catalogPublic.GET("/inventory/variants/:variant_id", h.CatalogHandler.GetInventoryByVariant)
 		catalogPublic.GET("/inventory/variants/:variant_id/stock", h.CatalogHandler.GetStockSummary)
