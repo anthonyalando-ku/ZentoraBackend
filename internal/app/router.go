@@ -7,6 +7,10 @@ import (
 	notifyHandler "zentora-service/internal/handlers/notification"
 	userHandler "zentora-service/internal/handlers/user"
 	wsHandler "zentora-service/internal/handlers/websocket"
+	cartHandler "zentora-service/internal/handlers/cart"
+	wishlistHandler "zentora-service/internal/handlers/wishlist"
+	orderHandler "zentora-service/internal/handlers/order"
+	reviewHandler "zentora-service/internal/handlers/review"
 	"zentora-service/internal/middleware"
 
 	"github.com/gin-gonic/gin"
@@ -20,6 +24,10 @@ type Handlers struct {
 	CatalogHandler   *catalogHandler.CatalogHandler
 	DiscoveryHandler *discoveryHandler.Handler
 	UserHandler      *userHandler.UserHandler
+	CartHandler      *cartHandler.Handler
+	WishlistHandler  *wishlistHandler.Handler
+	OrderHandler     *orderHandler.Handler
+	ReviewHandler    *reviewHandler.Handler
 	AuthMiddleware   *middleware.AuthMiddleware
 }
 
@@ -83,6 +91,19 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 		adminNotifications.POST("/broadcast", h.NotifHandler.BroadcastNotification)
 	}
 
+	ordersPublic := api.Group("/orders")
+	{
+		ordersPublic.POST("/guest", h.OrderHandler.CreateGuestOrder) // guest checkout
+	}
+	
+	ordersProtected := api.Group("/orders")
+	ordersProtected.Use(h.AuthMiddleware.Auth())
+	{
+		ordersProtected.POST("", h.OrderHandler.CreateUserOrder) // logged-in checkout (cart or direct)
+		ordersProtected.GET("", h.OrderHandler.ListOrders) // list user's orders with filters + pagination
+		ordersProtected.GET("/details", h.OrderHandler.GetOrderByID) // order details by ID (with items)
+	}
+
 	// ── User / addresses ───────────────────────────────────────────────────────
 	userRoutes := api.Group("/me")
 	userRoutes.Use(h.AuthMiddleware.Auth())
@@ -93,6 +114,17 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 		userRoutes.PUT("/addresses/:id", h.UserHandler.UpdateAddress)
 		userRoutes.DELETE("/addresses/:id", h.UserHandler.DeleteAddress)
 		userRoutes.PUT("/addresses/:id/default", h.UserHandler.SetDefaultAddress)
+		
+		userRoutes.GET("/cart", h.CartHandler.GetMyCart)
+		userRoutes.POST("/cart/items", h.CartHandler.AddOrUpdateItem)
+		userRoutes.DELETE("/cart/items/:id", h.CartHandler.RemoveItem)
+
+		userRoutes.GET("/wishlist", h.WishlistHandler.GetMyWishlist)
+		userRoutes.POST("/wishlist/items", h.WishlistHandler.Add)
+		userRoutes.DELETE("/wishlist/items", h.WishlistHandler.Remove)
+		userRoutes.DELETE("/wishlist", h.WishlistHandler.Clear)
+
+		userRoutes.POST("/reviews", h.ReviewHandler.Add)
 	}
 
 	// ── Public catalog ─────────────────────────────────────────────────────────

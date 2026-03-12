@@ -72,15 +72,14 @@ func (s *AuthService) SendEmailVerificationOTP(ctx context.Context, email string
 	s.cache.Set(ctx, metadataKey, metadataJSON, 10*time.Minute)
 
 	// Send OTP via email
-	if err := s.emailHelper.SendOTPEmail(ctx, email, otp); err != nil {
-		s.logger.Error("failed to send OTP email", zap.Error(err))
-		return nil, fmt.Errorf("failed to send OTP email: %w", err)
-	}
-
-	s.logger.Info("OTP sent to email",
-		zap.String("email", email),
-		zap.String("token", token),
-	)
+	go func(email, otp string) {
+		if err := s.emailHelper.SendOTPEmail(context.Background(), email, otp); err != nil {
+			s.logger.Error("failed to send OTP email",
+				zap.String("email", email),
+				zap.Error(err),
+			)
+		}
+	}(email, otp)
 
 	// Get remaining attempts
 	remaining, _ := s.rateLimiter.GetRemainingEmailVerificationAttempts(ctx, email)
@@ -155,17 +154,14 @@ func (s *AuthService) ResendEmailVerificationOTP(ctx context.Context, email, tok
 	updatedMetadataJSON, _ := json.Marshal(metadata)
 	s.cache.Set(ctx, metadataKey, updatedMetadataJSON, 10*time.Minute)
 
-	// Send new OTP via email
-	if err := s.emailHelper.SendOTPEmail(ctx, email, otp); err != nil {
-		s.logger.Error("failed to resend OTP email", zap.Error(err))
-		return nil, fmt.Errorf("failed to send OTP email: %w", err)
-	}
-
-	s.logger.Info("OTP resent to email",
-		zap.String("email", email),
-		zap.String("token", token),
-		zap.Float64("resend_count", resendCount+1),
-	)
+	go func(email, otp string) {
+		if err := s.emailHelper.SendOTPEmail(context.Background(), email, otp); err != nil {
+			s.logger.Error("failed to resend OTP email",
+				zap.String("email", email),
+				zap.Error(err),
+			)
+		}
+	}(email, otp)
 
 	// Get remaining attempts
 	remaining, _ := s.rateLimiter.GetRemainingEmailVerificationAttempts(ctx, email)

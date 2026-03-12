@@ -11,6 +11,8 @@ import (
 	"zentora-service/internal/domain/product"
 	"zentora-service/internal/domain/variant"
 	xerrors "zentora-service/internal/pkg/errors"
+	productsearchsvc "zentora-service/internal/service/productsearch"
+	productsearchrepo "zentora-service/internal/repository/productsearch"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -26,6 +28,7 @@ type ProductRepository struct {
 	inventoryRepo *InventoryRepository
 	tagRepo       *TagRepository
 	variantRepo   *VariantRepository
+	searchRepo productsearchrepo.Repository
 }
 
 func NewProductRepository(
@@ -37,6 +40,7 @@ func NewProductRepository(
 	inventoryRepo *InventoryRepository,
 	tagRepo *TagRepository,
 	variantRepo *VariantRepository,
+	searchRepo productsearchrepo.Repository,
 ) *ProductRepository {
 	return &ProductRepository{
 		db:            db,
@@ -47,6 +51,7 @@ func NewProductRepository(
 		inventoryRepo: inventoryRepo,
 		tagRepo:       tagRepo,
 		variantRepo:   variantRepo,
+		searchRepo: searchRepo,
 	}
 }
 
@@ -88,6 +93,14 @@ func (r *ProductRepository) buildProductGraph(ctx context.Context, tx pgx.Tx, in
 		return err
 	}
 	productID := in.Product.ID
+
+	// NEW: create product search doc in same tx
+	if r.searchRepo != nil {
+		doc := productsearchsvc.BuildSearchDocument(in.Product)
+		if err := r.searchRepo.UpsertForProductTx(ctx, tx, productID, doc); err != nil {
+			return fmt.Errorf("create product search document: %w", err)
+		}
+	}
 
 	if err := setProductCategoriesTx(ctx, tx, productID, in.CategoryIDs); err != nil {
 		return fmt.Errorf("set product categories: %w", err)

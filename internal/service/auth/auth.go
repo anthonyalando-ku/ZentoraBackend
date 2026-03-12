@@ -807,3 +807,11 @@ func generateTemporaryPassword() string {
 
 	return string(password)
 }
+
+func (s *AuthService) sendAsync(fn func() error) {
+	go func() {
+		if err := fn(); err != nil {
+			s.logger.Error("async task failed", zap.Error(err))
+		}
+	}()
+}

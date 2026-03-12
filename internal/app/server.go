@@ -29,6 +29,14 @@ import (
 	workerUsecase "zentora-service/internal/service/worker"
 	"zentora-service/internal/websocket"
 	wsHandlers "zentora-service/internal/websocket/handler"
+	cartHandler "zentora-service/internal/handlers/cart"
+	wishlistHandler "zentora-service/internal/handlers/wishlist"
+	cartsvc "zentora-service/internal/service/cart"
+	wishlistsvc "zentora-service/internal/service/wishlist"
+
+	orderHandler "zentora-service/internal/handlers/order"
+	orderusecase "zentora-service/internal/service/order"
+
 
 	"github.com/gin-gonic/gin"
 	"github.com/imagekit-developer/imagekit-go/v2"
@@ -115,6 +123,8 @@ func (s *Server) Start() error {
 	authRepo := postgres.NewAuthRepository(pool)
 	notifyRepo := postgres.NewNotificationRepository(pool)
 	discoveryRepo := postgres.NewDiscoveryRepository(pool)
+	cartRepo := postgres.NewCartRepository(pool)
+	wishlistRepo := postgres.NewWishlistRepository(pool)
 
 	// Catalog and user repositories
 	categoryRepo := postgres.NewCategoryRepository(pool)
@@ -125,6 +135,7 @@ func (s *Server) Start() error {
 	userAddressRepo := postgres.NewUserAddressRepository(pool)
 	inventoryRepo := postgres.NewInventoryRepository(pool)
 	discountRepo := postgres.NewDiscountRepository(pool)
+	searchRepo := postgres.NewProductSearchRepository()
 	productRepo := postgres.NewProductRepository(
 		pool,
 		attributeRepo,
@@ -134,7 +145,10 @@ func (s *Server) Start() error {
 		inventoryRepo,
 		tagRepo,
 		variantRepo,
+		searchRepo,
 	)
+
+	orderRepo := postgres.NewOrderRepository(pool)
 
 	// Update session manager with auth repo
 	sessionManager = session.NewManager(redisClient, authRepo)
@@ -179,7 +193,18 @@ func (s *Server) Start() error {
 	userService := userUsecase.NewUserService(userAddressRepo)
 	discoveryService := discoveryUsecase.NewDiscoveryService(discoveryRepo, categoryRepo, redisClient)
 	metricsJobService := workerUsecase.NewMetricsJobService(discoveryRepo, s.cfg.WorkerMetricsInterval, zap.NewStdLog(logger))
-
+	cartService := cartsvc.NewService(cartRepo, redisClient)
+	wishlistService := wishlistsvc.NewService(wishlistRepo, redisClient)
+	orderService := orderusecase.NewService(
+		pool,
+		orderRepo,
+		cartRepo,
+		productRepo,
+		variantRepo,
+		inventoryRepo,
+		userAddressRepo,
+		discountRepo,
+	)
 	// ----- Initialize Super Admin -----
 	if err := s.initializeSuperAdmin(); err != nil {
 		logger.Error("failed to initialize super admin", zap.Error(err))
@@ -193,7 +218,9 @@ func (s *Server) Start() error {
 	catalogHandlerInst := catalogH.NewCatalogHandler(catalogService, logger)
 	discoveryHandlerInst := discoveryH.NewHandler(discoveryService, metricsJobService)
 	userHandlerInst := userH.NewUserHandler(userService)
-
+	cartHandlerInst := cartHandler.NewHandler(cartService)
+	wishListHandlerInst := wishlistHandler.NewHandler(wishlistService)
+	orderHandlerInst := orderHandler.NewHandler(orderService)
 	// ----- Middlewares -----
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
@@ -212,6 +239,9 @@ func (s *Server) Start() error {
 		DiscoveryHandler: discoveryHandlerInst,
 		UserHandler:      userHandlerInst,
 		AuthMiddleware:   authMiddleware,
+		CartHandler: cartHandlerInst,
+		OrderHandler: orderHandlerInst,
+		WishlistHandler: wishListHandlerInst,
 	}
 	SetupRouter(s.engine, logger, handlers)
 
