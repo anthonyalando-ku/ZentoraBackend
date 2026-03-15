@@ -123,7 +123,6 @@ func (s *Server) Start() error {
 	authRepo := postgres.NewAuthRepository(pool)
 	notifyRepo := postgres.NewNotificationRepository(pool)
 	discoveryRepo := postgres.NewDiscoveryRepository(pool)
-	cartRepo := postgres.NewCartRepository(pool)
 	wishlistRepo := postgres.NewWishlistRepository(pool)
 
 	// Catalog and user repositories
@@ -132,6 +131,7 @@ func (s *Server) Start() error {
 	tagRepo := postgres.NewTagRepository(pool)
 	attributeRepo := postgres.NewAttributeRepository(pool)
 	variantRepo := postgres.NewVariantRepository(pool)
+
 	userAddressRepo := postgres.NewUserAddressRepository(pool)
 	inventoryRepo := postgres.NewInventoryRepository(pool)
 	discountRepo := postgres.NewDiscountRepository(pool)
@@ -147,6 +147,7 @@ func (s *Server) Start() error {
 		variantRepo,
 		searchRepo,
 	)
+	cartRepo := postgres.NewCartRepository(pool, productRepo, variantRepo)
 
 	orderRepo := postgres.NewOrderRepository(pool)
 

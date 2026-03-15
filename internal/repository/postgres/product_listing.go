@@ -73,9 +73,21 @@ func (r *ProductRepository) ListProductsForCatalog(
 	limitPos := len(args) + 1
 	offsetPos := len(args) + 2
 
+	// idsQ := fmt.Sprintf(`
+	// 	SELECT DISTINCT p.id
+	// 	FROM products p%s%s
+	// 	ORDER BY %s
+	// 	LIMIT $%d OFFSET $%d`,
+	// 	joinSQL,
+	// 	where,
+	// 	orderBy,
+	// 	limitPos,
+	// 	offsetPos,
+	// )
 	idsQ := fmt.Sprintf(`
-		SELECT DISTINCT p.id
+		SELECT p.id
 		FROM products p%s%s
+		GROUP BY p.id
 		ORDER BY %s
 		LIMIT $%d OFFSET $%d`,
 		joinSQL,

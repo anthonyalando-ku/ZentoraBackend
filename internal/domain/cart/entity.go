@@ -1,6 +1,7 @@
 package cart
 
 import "time"
+import "zentora-service/internal/domain/discovery"
 
 type CartStatus string
 
@@ -11,7 +12,7 @@ const (
 )
 
 type Cart struct {
-	ID        int64
+	ID        int64 
 	UserID    int64
 	Status    CartStatus
 	CreatedAt time.Time
@@ -27,6 +28,8 @@ type CartItem struct {
 	Quantity     int
 	PriceAtAdded string
 	AddedAt      time.Time
+
+	ProductInfo *discovery.ProductCard `json:"product_info,omitempty"`
 }
 
 type UpsertCartItemInput struct {

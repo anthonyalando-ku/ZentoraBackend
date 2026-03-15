@@ -160,6 +160,7 @@ func (h *CatalogHandler) ListProducts(c *gin.Context) {
 
 	products, total, err := h.svc.ListProducts(c.Request.Context(), req, sort)
 	if err != nil {
+		h.logger.Error("failed to list products", zap.Error(err))
 		handleError(c, err)
 		return
 	}

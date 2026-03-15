@@ -15,10 +15,12 @@ import (
 
 type CartRepository struct {
 	db *pgxpool.Pool
+	productRepo *ProductRepository
+	variantRepo *VariantRepository
 }
 
-func NewCartRepository(db *pgxpool.Pool) *CartRepository {
-	return &CartRepository{db: db}
+func NewCartRepository(db *pgxpool.Pool, productRepo *ProductRepository, variantRepo *VariantRepository) *CartRepository {
+	return &CartRepository{db: db, productRepo: productRepo, variantRepo: variantRepo}
 }
 
 var _ cartrepo.Repository = (*CartRepository)(nil)
@@ -141,6 +143,13 @@ func (r *CartRepository) GetCartItems(ctx context.Context, cartID int64) ([]cart
 		if err != nil {
 			return nil, fmt.Errorf("scan cart item: %w", err)
 		}
+		// get product & variant info for each item
+		// (could be optimized with batch queries if needed, but usually carts have just a few items)
+		hydratedProduct, err := hydrateDiscoveryProductCards(ctx, r.db, []int64{it.ProductID})
+		if err != nil {
+			return nil, fmt.Errorf("hydrate product info: %w", err)
+		}
+		it.ProductInfo = &hydratedProduct[0]
 		out = append(out, *it)
 	}
 	if err := rows.Err(); err != nil {
