@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"zentora-service/internal/domain/discount"
+	"zentora-service/internal/domain/discovery"
 	"zentora-service/internal/domain/inventory"
 	"zentora-service/internal/domain/product"
 	xerrors "zentora-service/internal/pkg/errors"
@@ -186,14 +187,18 @@ func (s *CatalogService) buildDetail(ctx context.Context, p *product.Product, lo
 	return detail, nil
 }
 
-func (s *CatalogService) ListProducts(ctx context.Context, req *product.ListRequest) ([]product.Product, int64, error) {
+func (s *CatalogService) ListProducts(
+	ctx context.Context,
+	req *product.ListRequest,
+	sort string,
+) ([]discovery.ProductCard, int64, error) {
 	if req.Page < 1 {
 		req.Page = 1
 	}
 	if req.PageSize < 1 || req.PageSize > 100 {
 		req.PageSize = 20
 	}
-	return s.productRepo.ListProducts(ctx, req)
+	return s.productRepo.ListProductsForCatalog(ctx, req, sort)
 }
 
 func (s *CatalogService) UpdateProduct(ctx context.Context, id int64, req *product.UpdateRequest) (*product.Product, error) {

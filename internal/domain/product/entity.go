@@ -57,7 +57,15 @@ type RelatedRef struct {
 type ListFilter struct {
 	Status     *Status
 	BrandID    *int64
+	BrandIDs   []int64
 	CategoryID *int64
 	IsFeatured *bool
 	Search     *string
+
+	PriceMin      *float64
+	PriceMax      *float64
+	MinRating     *float64
+	DiscountOnly  bool
+	InStockOnly   bool
+	TagIDs        []int64
 }

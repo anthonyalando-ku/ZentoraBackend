@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"strconv"
+	"strings"
 
 	productdomain "zentora-service/internal/domain/product"
 	"zentora-service/internal/middleware"
@@ -71,10 +72,20 @@ func (h *CatalogHandler) GetProductBySlug(c *gin.Context) {
 	}
 	response.Success(c, http.StatusOK, "product retrieved", p)
 }
-
 func (h *CatalogHandler) ListProducts(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	page, err := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if err != nil || page < 1 {
+		page = 1
+	}
+	pageSize, err := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if err != nil || pageSize <= 0 {
+		pageSize = 20
+	}
+	sort := c.DefaultQuery("sort", "new_arrivals")
+	feedType := c.Query("feed_type")
+	if feedType != "" {
+		sort = mapFeedToSort(feedType)
+	}
 
 	req := &productdomain.ListRequest{
 		Page:     page,
@@ -85,25 +96,69 @@ func (h *CatalogHandler) ListProducts(c *gin.Context) {
 		st := productdomain.Status(s)
 		req.Filter.Status = &st
 	}
+
 	if b := c.Query("brand_id"); b != "" {
 		if id, err := strconv.ParseInt(b, 10, 64); err == nil {
 			req.Filter.BrandID = &id
 		}
 	}
+
+	if bs := c.Query("brand_ids"); bs != "" {
+		if ids, err := parseCSVInt64(bs); err == nil && len(ids) > 0 {
+			req.Filter.BrandIDs = ids
+		}
+	}
+
 	if cat := c.Query("category_id"); cat != "" {
 		if id, err := strconv.ParseInt(cat, 10, 64); err == nil {
 			req.Filter.CategoryID = &id
 		}
 	}
-	if f := c.Query("is_featured"); f == "true" {
-		v := true
-		req.Filter.IsFeatured = &v
+
+	if f := c.Query("is_featured"); f != "" {
+		if v, err := strconv.ParseBool(f); err == nil {
+			req.Filter.IsFeatured = &v
+		}
 	}
+
 	if q := c.Query("q"); q != "" {
 		req.Filter.Search = &q
 	}
 
-	products, total, err := h.svc.ListProducts(c.Request.Context(), req)
+	if v := c.Query("price_min"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			req.Filter.PriceMin = &f
+		}
+	}
+	if v := c.Query("price_max"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			req.Filter.PriceMax = &f
+		}
+	}
+	if v := c.Query("min_rating"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil {
+			req.Filter.MinRating = &f
+		}
+	}
+
+	if v := c.Query("discount_only"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			req.Filter.DiscountOnly = b
+		}
+	}
+	if v := c.Query("in_stock_only"); v != "" {
+		if b, err := strconv.ParseBool(v); err == nil {
+			req.Filter.InStockOnly = b
+		}
+	}
+
+	if ts := c.Query("tag_ids"); ts != "" {
+		if ids, err := parseCSVInt64(ts); err == nil && len(ids) > 0 {
+			req.Filter.TagIDs = ids
+		}
+	}
+
+	products, total, err := h.svc.ListProducts(c.Request.Context(), req, sort)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -113,7 +168,45 @@ func (h *CatalogHandler) ListProducts(c *gin.Context) {
 		"total": total,
 		"page":  page,
 		"size":  pageSize,
+		"sort":  sort,
 	})
+}
+
+func parseCSVInt64(s string) ([]int64, error) {
+	parts := strings.Split(s, ",")
+	out := make([]int64, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		v, err := strconv.ParseInt(p, 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		if v <= 0 {
+			continue
+		}
+		out = append(out, v)
+	}
+	return out, nil
+}
+
+func mapFeedToSort(feed string) string {
+	switch feed {
+	case "trending":
+		return "trending"
+	case "best_sellers":
+		return "best_sellers"
+	case "new_arrivals":
+		return "new_arrivals"
+	case "highly_rated":
+		return "rating"
+	case "featured":
+		return "new_arrivals"
+	default:
+		return "new_arrivals"
+	}
 }
 
 func (h *CatalogHandler) UpdateProduct(c *gin.Context) {

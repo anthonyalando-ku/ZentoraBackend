@@ -242,6 +242,47 @@ func (r *ProductRepository) ListProducts(ctx context.Context, req *product.ListR
 	return products, total, err
 }
 
+
+func buildProductWhere(f product.ListFilter) (string, []any) {
+	var clauses []string
+	var args []any
+	idx := 1
+
+	if f.Status != nil {
+		clauses = append(clauses, fmt.Sprintf("status = $%d", idx))
+		args = append(args, *f.Status)
+		idx++
+	}
+	if f.BrandID != nil {
+		clauses = append(clauses, fmt.Sprintf("brand_id = $%d", idx))
+		args = append(args, *f.BrandID)
+		idx++
+	}
+	if f.IsFeatured != nil {
+		clauses = append(clauses, fmt.Sprintf("is_featured = $%d", idx))
+		args = append(args, *f.IsFeatured)
+		idx++
+	}
+	if f.Search != nil {
+		clauses = append(clauses, fmt.Sprintf("(name ILIKE $%d OR short_description ILIKE $%d)", idx, idx))
+		args = append(args, "%"+*f.Search+"%")
+		idx++
+	}
+	if f.CategoryID != nil {
+		clauses = append(clauses, fmt.Sprintf(
+			"id IN (SELECT product_id FROM product_category_map WHERE category_id = $%d)", idx,
+		))
+		args = append(args, *f.CategoryID)
+		idx++
+	}
+	_ = idx
+	if len(clauses) == 0 {
+		return "", args
+	}
+	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+
 func (r *ProductRepository) AddProductImage(ctx context.Context, img *product.Image) error {
 	return insertProductImageTx(ctx, r.db, img)
 }
@@ -340,45 +381,6 @@ func buildVariantEntity(productID int64, vi *CreateVariantTxInput) *variant.Vari
 		v.Weight = sql.NullFloat64{Float64: *vi.Weight, Valid: true}
 	}
 	return v
-}
-
-func buildProductWhere(f product.ListFilter) (string, []any) {
-	var clauses []string
-	var args []any
-	idx := 1
-
-	if f.Status != nil {
-		clauses = append(clauses, fmt.Sprintf("status = $%d", idx))
-		args = append(args, *f.Status)
-		idx++
-	}
-	if f.BrandID != nil {
-		clauses = append(clauses, fmt.Sprintf("brand_id = $%d", idx))
-		args = append(args, *f.BrandID)
-		idx++
-	}
-	if f.IsFeatured != nil {
-		clauses = append(clauses, fmt.Sprintf("is_featured = $%d", idx))
-		args = append(args, *f.IsFeatured)
-		idx++
-	}
-	if f.Search != nil {
-		clauses = append(clauses, fmt.Sprintf("(name ILIKE $%d OR short_description ILIKE $%d)", idx, idx))
-		args = append(args, "%"+*f.Search+"%")
-		idx++
-	}
-	if f.CategoryID != nil {
-		clauses = append(clauses, fmt.Sprintf(
-			"id IN (SELECT product_id FROM product_category_map WHERE category_id = $%d)", idx,
-		))
-		args = append(args, *f.CategoryID)
-		idx++
-	}
-	_ = idx
-	if len(clauses) == 0 {
-		return "", args
-	}
-	return " WHERE " + strings.Join(clauses, " AND "), args
 }
 
 func scanProductOne(ctx context.Context, db interface {
