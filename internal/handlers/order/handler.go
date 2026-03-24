@@ -190,6 +190,58 @@ func (h *Handler) ListOrders(c *gin.Context) {
 	response.Success(c, http.StatusOK, "orders listed", gin.H{"orders": orders, "offset": offset})
 }
 
+// ========== Admin order management ==========
+
+// GET /api/v1/admin/orders/stats
+func (h *Handler) AdminOrderStats(c *gin.Context) {
+	stats, err := h.orders.GetOrderStats(c.Request.Context())
+	if err != nil {
+		response.Error(c, http.StatusInternalServerError, "failed to get order stats", err)
+		return
+	}
+	response.Success(c, http.StatusOK, "order stats", stats)
+}
+
+// GET /api/v1/admin/orders/by-number?order_number=ZNT-...
+func (h *Handler) AdminGetOrderByNumber(c *gin.Context) {
+	n := strings.TrimSpace(c.Query("order_number"))
+	if n == "" {
+		response.Error(c, http.StatusBadRequest, "order_number is required", nil)
+		return
+	}
+
+	o, err := h.orders.GetOrderByNumber(c.Request.Context(), n)
+	if err != nil {
+		handleErr(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "order details", gin.H{"order": o})
+}
+
+// PUT /api/v1/admin/orders/:id/status
+func (h *Handler) AdminUpdateOrderStatus(c *gin.Context) {
+	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || id <= 0 {
+		response.Error(c, http.StatusBadRequest, "invalid order id", err)
+		return
+	}
+
+	var req orderdomain.UpdateOrderStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Error(c, http.StatusBadRequest, "invalid request body", err)
+		return
+	}
+
+	o, err := h.orders.UpdateOrderStatus(c.Request.Context(), id, req.Status)
+	if err != nil {
+		handleErr(c, err)
+		return
+	}
+
+	response.Success(c, http.StatusOK, "order status updated", gin.H{"order": o})
+}
+
 func handleErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, orderdomain.ErrInvalidInput):

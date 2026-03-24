@@ -82,6 +82,17 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 		notifications.DELETE("/:id", h.NotifHandler.DeleteNotification)
 	}
 
+		// ── Admin — auth/users management ─────────────────────────────────────────
+	adminAuth := api.Group("/admin/auth")
+	adminAuth.Use(h.AuthMiddleware.AdminOnly()...)
+	{
+		adminAuth.GET("/users", h.AuthHandler.AdminListUsers)
+		adminAuth.GET("/users/stats", h.AuthHandler.AdminUserStats)
+		adminAuth.GET("/users/search", h.AuthHandler.AdminSearchUsers)
+		adminAuth.GET("/users/:id", h.AuthHandler.AdminGetUser)
+		adminAuth.DELETE("/users/:id", h.AuthHandler.AdminDeleteUser)
+	}
+
 	// ── Notifications (admin) ──────────────────────────────────────────────────
 	adminNotifications := api.Group("/admin/notifications")
 	adminNotifications.Use(h.AuthMiddleware.AdminOnly()...)
@@ -102,6 +113,18 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 		ordersProtected.POST("", h.OrderHandler.CreateUserOrder) // logged-in checkout (cart or direct)
 		ordersProtected.GET("", h.OrderHandler.ListOrders) // list user's orders with filters + pagination
 		ordersProtected.GET("/details", h.OrderHandler.GetOrderByID) // order details by ID (with items)
+	}
+
+	// ── Admin — orders management ────────────────────────────────────────────
+	adminOrders := api.Group("/admin/orders")
+	adminOrders.Use(h.AuthMiddleware.AdminOnly()...)
+	{
+		// Reuse existing ListOrders (same handler, but admin-only entrypoint)
+		adminOrders.GET("", h.OrderHandler.ListOrders)
+
+		adminOrders.GET("/stats", h.OrderHandler.AdminOrderStats)
+		adminOrders.GET("/by-number", h.OrderHandler.AdminGetOrderByNumber)
+		adminOrders.PUT("/:id/status", h.OrderHandler.AdminUpdateOrderStatus)
 	}
 
 	// ── User / addresses ───────────────────────────────────────────────────────

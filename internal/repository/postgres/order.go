@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"zentora-service/internal/domain/order"
 	orderrepo "zentora-service/internal/repository/order"
@@ -275,4 +276,135 @@ func buildOrdersWhere(f order.ListFilter) (string, []any) {
 		return "", args
 	}
 	return " WHERE " + strings.Join(clauses, " AND "), args
+}
+
+// GetOrderByNumber is useful for admin lookups
+func (r *OrderRepository) GetOrderByNumber(ctx context.Context, orderNumber string) (*order.Order, error) {
+	orderNumber = strings.TrimSpace(orderNumber)
+	if orderNumber == "" {
+		return nil, order.ErrInvalidInput
+	}
+
+	const q = `
+		SELECT
+			id, user_id, cart_id, order_number, status,
+			subtotal, discount_amount, tax_amount, shipping_fee, total_amount, currency, shipping_method_id,
+			shipping_full_name, shipping_phone, shipping_country, shipping_county, shipping_city, shipping_area, shipping_postal_code,
+			shipping_address_line_1, shipping_address_line_2,
+			created_at, updated_at
+		FROM orders
+		WHERE order_number = $1
+	`
+
+	var o order.Order
+	if err := r.db.QueryRow(ctx, q, orderNumber).Scan(
+		&o.ID, &o.UserID, &o.CartID, &o.OrderNumber, &o.Status,
+		&o.Subtotal, &o.DiscountAmount, &o.TaxAmount, &o.ShippingFee, &o.TotalAmount, &o.Currency, &o.ShippingMethodID,
+		&o.Shipping.FullName, &o.Shipping.Phone, &o.Shipping.Country, &o.Shipping.County, &o.Shipping.City, &o.Shipping.Area, &o.Shipping.PostalCode,
+		&o.Shipping.AddressLine1, &o.Shipping.AddressLine2,
+		&o.CreatedAt, &o.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, order.ErrNotFound
+		}
+		return nil, fmt.Errorf("get order by number: %w", err)
+	}
+
+	items, err := r.getOrderItems(ctx, o.ID)
+	if err != nil {
+		return nil, err
+	}
+	o.Items = items
+	return &o, nil
+}
+
+// UpdateOrderStatus sets the status and bumps updated_at.
+// NOTE: We keep it simple; transition rules can be added in service layer.
+func (r *OrderRepository) UpdateOrderStatus(ctx context.Context, id int64, status order.OrderStatus) (*order.Order, error) {
+	if id <= 0 {
+		return nil, order.ErrInvalidInput
+	}
+	if strings.TrimSpace(string(status)) == "" {
+		return nil, order.ErrInvalidInput
+	}
+
+	const q = `
+		UPDATE orders
+		SET status = $1, updated_at = NOW()
+		WHERE id = $2
+		RETURNING
+			id, user_id, cart_id, order_number, status,
+			subtotal, discount_amount, tax_amount, shipping_fee, total_amount, currency, shipping_method_id,
+			shipping_full_name, shipping_phone, shipping_country, shipping_county, shipping_city, shipping_area, shipping_postal_code,
+			shipping_address_line_1, shipping_address_line_2,
+			created_at, updated_at
+	`
+
+	var o order.Order
+	if err := r.db.QueryRow(ctx, q, status, id).Scan(
+		&o.ID, &o.UserID, &o.CartID, &o.OrderNumber, &o.Status,
+		&o.Subtotal, &o.DiscountAmount, &o.TaxAmount, &o.ShippingFee, &o.TotalAmount, &o.Currency, &o.ShippingMethodID,
+		&o.Shipping.FullName, &o.Shipping.Phone, &o.Shipping.Country, &o.Shipping.County, &o.Shipping.City, &o.Shipping.Area, &o.Shipping.PostalCode,
+		&o.Shipping.AddressLine1, &o.Shipping.AddressLine2,
+		&o.CreatedAt, &o.UpdatedAt,
+	); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, order.ErrNotFound
+		}
+		return nil, fmt.Errorf("update order status: %w", err)
+	}
+
+	// For admin actions, returning the full order (with items) is handy
+	items, err := r.getOrderItems(ctx, o.ID)
+	if err != nil {
+		return nil, err
+	}
+	o.Items = items
+	return &o, nil
+}
+
+// OrderStats is for admin dashboard.
+func (r *OrderRepository) OrderStats(ctx context.Context) (*order.OrderStatsResponse, error) {
+	var s order.OrderStatsResponse
+
+	// counts
+	const counts = `
+		SELECT
+			COUNT(1) AS total_orders,
+			COUNT(1) FILTER (WHERE status = 'pending') AS pending_orders,
+			COUNT(1) FILTER (WHERE status = 'completed') AS completed_orders,
+			COUNT(1) FILTER (WHERE status = 'cancelled') AS cancelled_orders
+		FROM orders
+	`
+	if err := r.db.QueryRow(ctx, counts).Scan(
+		&s.TotalOrders,
+		&s.PendingOrders,
+		&s.CompletedOrders,
+		&s.CancelledOrders,
+	); err != nil {
+		return nil, fmt.Errorf("order stats counts: %w", err)
+	}
+
+	// revenue totals (we treat completed+delivered as revenue; adjust if your business logic differs)
+	const revenue = `
+		SELECT
+			COALESCE(SUM(total_amount) FILTER (WHERE status IN ('completed','delivered')), 0) AS revenue_total,
+			COALESCE(SUM(total_amount) FILTER (WHERE status IN ('completed','delivered') AND created_at >= NOW() - INTERVAL '1 day'), 0) AS revenue_today,
+			COALESCE(SUM(total_amount) FILTER (WHERE status IN ('completed','delivered') AND created_at >= NOW() - INTERVAL '7 day'), 0) AS revenue_7_days,
+			COUNT(1) FILTER (WHERE created_at >= NOW() - INTERVAL '1 day') AS orders_today,
+			COUNT(1) FILTER (WHERE created_at >= NOW() - INTERVAL '7 day') AS orders_7_days
+		FROM orders
+	`
+	if err := r.db.QueryRow(ctx, revenue).Scan(
+		&s.RevenueTotal,
+		&s.RevenueToday,
+		&s.Revenue7Days,
+		&s.OrdersToday,
+		&s.Orders7Days,
+	); err != nil {
+		return nil, fmt.Errorf("order stats revenue: %w", err)
+	}
+
+	s.UpdatedAt = time.Now().UTC()
+	return &s, nil
 }

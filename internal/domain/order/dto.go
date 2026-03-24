@@ -1,5 +1,9 @@
 package order
 
+import (
+	"time"
+)
+
 
 type PaymentMethod string
 
@@ -31,4 +35,26 @@ type CreateUserOrderRequest struct {
 
 	// Address selection: if nil, use default address
 	AddressID *int64 `json:"address_id,omitempty"`
+}
+
+
+type UpdateOrderStatusRequest struct {
+	Status OrderStatus `json:"status"` // required
+	Note   string      `json:"note"`   // optional (future: audit trail)
+}
+
+// For admin dashboard
+type OrderStatsResponse struct {
+	TotalOrders     int64   `json:"total_orders"`
+	PendingOrders   int64   `json:"pending_orders"`
+	CompletedOrders int64   `json:"completed_orders"`
+	CancelledOrders int64   `json:"cancelled_orders"`
+
+	RevenueTotal   float64 `json:"revenue_total"`
+	RevenueToday   float64 `json:"revenue_today"`
+	Revenue7Days   float64 `json:"revenue_7_days"`
+	OrdersToday    int64   `json:"orders_today"`
+	Orders7Days    int64   `json:"orders_7_days"`
+
+	UpdatedAt time.Time `json:"updated_at"`
 }

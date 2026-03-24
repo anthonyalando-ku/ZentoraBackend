@@ -17,4 +17,8 @@ type Repository interface {
 	// ListOrders returns orders (with items optional; here we return without items for listing),
 	// and a total count for pagination.
 	ListOrders(ctx context.Context, f order.ListFilter) ([]order.Order, int64, error)
+
+	GetOrderByNumber(ctx context.Context, orderNumber string) (*order.Order, error)
+	UpdateOrderStatus(ctx context.Context, id int64, status order.OrderStatus) (*order.Order, error)
+	OrderStats(ctx context.Context) (*order.OrderStatsResponse, error)
 }
