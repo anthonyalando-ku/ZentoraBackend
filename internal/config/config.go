@@ -63,7 +63,7 @@ func Load() AppConfig {
 		SMTPFromName: getEnv("SMTP_FROM_NAME", "Zentora Support"),
 		SMTPSecure:   strings.ToLower(getEnv("SMTP_SECURE", "true")) == "true",
 		BaseURL:      getEnv("BASE_URL", ""),
-		LogoURL:      getEnv("LOGO_URL", ""),
+		LogoURL:      getEnv("LOGO_URL", "https://ik.imagekit.io/anthonyalando/zentora/zentora_logo_clear.png"),
 	}
 }
 

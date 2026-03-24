@@ -2,7 +2,7 @@
 -- REUSABLE AUTHENTICATION MODULE (Production-Ready)
 -- ============================================
 \c zentora;
--- Taska database
+-- Zentora auth database
 
 BEGIN;
 
