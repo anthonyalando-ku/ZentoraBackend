@@ -8,12 +8,8 @@ import (
 	"os"
 )
 
-func LoadRSAPrivateKeyFromPEM(path string) (*rsa.PrivateKey, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read private key: %w", err)
-	}
-
+// parsePEMBytes parses PEM bytes into an RSA private key
+func parseRSAPrivateKeyFromPEMBytes(b []byte) (*rsa.PrivateKey, error) {
 	block, _ := pem.Decode(b)
 	if block == nil || (block.Type != "RSA PRIVATE KEY" && block.Type != "PRIVATE KEY") {
 		return nil, fmt.Errorf("invalid PEM private key type: %s", block.Type)
@@ -36,15 +32,11 @@ func LoadRSAPrivateKeyFromPEM(path string) (*rsa.PrivateKey, error) {
 	return x509.ParsePKCS1PrivateKey(block.Bytes)
 }
 
-func LoadRSAPublicKeyFromPEM(path string) (*rsa.PublicKey, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read public key: %w", err)
-	}
-
+// parsePEMBytes parses PEM bytes into an RSA public key
+func parseRSAPublicKeyFromPEMBytes(b []byte) (*rsa.PublicKey, error) {
 	block, _ := pem.Decode(b)
 	if block == nil || (block.Type != "RSA PUBLIC KEY" && block.Type != "PUBLIC KEY") {
-		return nil, fmt.Errorf("invalid PEM public key type")
+		return nil, fmt.Errorf("invalid PEM public key type: %s", block.Type)
 	}
 
 	if block.Type == "PUBLIC KEY" {
@@ -62,4 +54,24 @@ func LoadRSAPublicKeyFromPEM(path string) (*rsa.PublicKey, error) {
 
 	// PKCS1 format
 	return x509.ParsePKCS1PublicKey(block.Bytes)
+}
+
+// LoadRSAPrivateKeyFromPEM tries to read from file, if not exists treats input as PEM string
+func LoadRSAPrivateKeyFromPEM(pathOrPEM string) (*rsa.PrivateKey, error) {
+	b, err := os.ReadFile(pathOrPEM)
+	if err != nil {
+		// File not found, treat input as PEM string
+		b = []byte(pathOrPEM)
+	}
+	return parseRSAPrivateKeyFromPEMBytes(b)
+}
+
+// LoadRSAPublicKeyFromPEM tries to read from file, if not exists treats input as PEM string
+func LoadRSAPublicKeyFromPEM(pathOrPEM string) (*rsa.PublicKey, error) {
+	b, err := os.ReadFile(pathOrPEM)
+	if err != nil {
+		// File not found, treat input as PEM string
+		b = []byte(pathOrPEM)
+	}
+	return parseRSAPublicKeyFromPEMBytes(b)
 }
