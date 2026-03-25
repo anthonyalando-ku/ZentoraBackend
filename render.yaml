@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: zentora-api
+    runtime: docker
+    plan: free
+    region: oregon
+
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+
+    # Your Dockerfile already EXPOSEs 8002 and healthchecks /api/v1/health.
+    # Render uses this to route traffic to the container.
+    healthCheckPath: /api/v1/health
+
+    # If your app listens on 8002, keep this.
+    envVars:
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: zentora-redis
+          property: connectionString
+
+      # ---- Common Render convenience: your app can read PORT if it supports it ----
+      # If your app is hardcoded to 8002, you can ignore PORT.
+      - key: PORT
+        value: "8002"
+
+  # ---------------------------------------------------------------------------
+  # Redis (Render Key Value)
+  # ---------------------------------------------------------------------------
+  - type: keyvalue
+    name: zentora-redis
+    plan: free
+    region: oregon
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: allow all (adjust for security)

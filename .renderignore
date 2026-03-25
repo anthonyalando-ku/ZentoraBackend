@@ -1,0 +1,11 @@
+# Local dev
+.env
+**/*.log
+
+# Uploads should NOT be in git; on Render you typically use object storage
+uploads/
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

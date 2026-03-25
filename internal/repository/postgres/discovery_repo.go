@@ -325,7 +325,7 @@ func (r *DiscoveryRepository) getRecommendedCandidates(ctx context.Context, req 
 			WHERE p.status = $1
 			GROUP BY pcv.related_product_id
 		)
-		SELECT p.id,
+		SELECT p.id as product_id,
 		       COALESCE(ap.personalization_score, 0)::DOUBLE PRECISION AS personalization_score,
 		       COALESCE(cvp.co_view_score, 0)::DOUBLE PRECISION AS co_view_score,
 		       COALESCE(pm.conversion_rate, 0)::DOUBLE PRECISION AS conversion_rate,
