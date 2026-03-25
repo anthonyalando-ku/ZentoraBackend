@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/zentora   /app/zentora
-COPY --from=builder /app/secrets   /app/secrets
+# COPY --from=builder /app/secrets   /app/secrets
 COPY --from=builder /app/static    /app/static
 
 # Uploads directory must exist so Gin can serve and the app can write to it.
