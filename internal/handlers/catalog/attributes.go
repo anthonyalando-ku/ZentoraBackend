@@ -7,6 +7,7 @@ import (
 	"zentora-service/internal/pkg/response"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 func (h *CatalogHandler) ListAttributes(c *gin.Context) {
@@ -48,6 +49,7 @@ func (h *CatalogHandler) CreateAttribute(c *gin.Context) {
 	}
 	a, err := h.svc.CreateAttribute(c.Request.Context(), &req)
 	if err != nil {
+		h.logger.Error("Failed to create attribute", zap.Error(err))
 		handleError(c, err)
 		return
 	}

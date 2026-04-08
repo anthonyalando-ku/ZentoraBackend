@@ -29,6 +29,7 @@ type ProductRepository struct {
 	tagRepo       *TagRepository
 	variantRepo   *VariantRepository
 	searchRepo productsearchrepo.Repository
+	productEventsRepo *ProductEventsRepository
 }
 
 func NewProductRepository(
@@ -41,6 +42,7 @@ func NewProductRepository(
 	tagRepo *TagRepository,
 	variantRepo *VariantRepository,
 	searchRepo productsearchrepo.Repository,
+	productEventsRepo *ProductEventsRepository,
 ) *ProductRepository {
 	return &ProductRepository{
 		db:            db,
@@ -52,6 +54,7 @@ func NewProductRepository(
 		tagRepo:       tagRepo,
 		variantRepo:   variantRepo,
 		searchRepo: searchRepo,
+		productEventsRepo: productEventsRepo,
 	}
 }
 
@@ -171,7 +174,17 @@ func (r *ProductRepository) GetProductBySlug(ctx context.Context, slug string) (
 		       status, is_featured, is_digital, rating, review_count, created_by,
 		       created_at, updated_at
 		FROM products WHERE slug = $1`
-	return scanProductOne(ctx, r.db, q, slug)
+
+	product, err := scanProductOne(ctx, r.db, q, slug)
+	if err == nil {
+		_ = r.productEventsRepo.Create(ctx, CreateProductEventParams{
+			ProductID: product.ID,
+			EventType: ProductEventView,
+			Quantity: 1,
+		})
+	}
+
+	return product, err
 }
 
 func (r *ProductRepository) UpdateProduct(ctx context.Context, p *product.Product) error {

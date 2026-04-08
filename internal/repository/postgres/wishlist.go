@@ -14,10 +14,14 @@ import (
 
 type WishlistRepository struct {
 	db *pgxpool.Pool
+	productEventRepo *ProductEventsRepository
 }
 
-func NewWishlistRepository(db *pgxpool.Pool) *WishlistRepository {
-	return &WishlistRepository{db: db}
+func NewWishlistRepository(db *pgxpool.Pool, productEventRepo *ProductEventsRepository) *WishlistRepository {
+	return &WishlistRepository{
+		db:               db,
+		productEventRepo: productEventRepo,
+	}
 }
 
 var _ wishlistrepo.Repository = (*WishlistRepository)(nil)
@@ -133,6 +137,12 @@ func (r *WishlistRepository) AddItem(ctx context.Context, userID int64, productI
 	if err != nil {
 		return fmt.Errorf("add wishlist item: %w", err)
 	}
+	_ = r.productEventRepo.Create(ctx, CreateProductEventParams{
+		ProductID: productID,
+		UserID:    &userID,
+		EventType: ProductEventWishlist,
+		Quantity: 1,
+	})
 	return nil
 }
 

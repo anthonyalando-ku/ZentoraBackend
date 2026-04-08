@@ -35,11 +35,11 @@ services:
     # Remove the ports block if you do not need local access.
     ports:
       - "127.0.0.1:6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    # healthcheck:
+    #   test: ["CMD", "redis-cli", "ping"]
+    #   interval: 60s
+    #   timeout: 3s
+    #   retries: 3
 
   # ---------------------------------------------------------------------------
   # Zentora API
@@ -76,8 +76,8 @@ services:
     # Use the /health endpoint baked into the app for liveness checks.
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/api/v1/health"]
-      interval: 30s
-      timeout: 5s
+      interval: 5m
+      timeout: 3s
       start_period: 15s
       retries: 3
     # Log rotation so the container does not fill the disk.
