@@ -191,7 +191,7 @@ func (s *Server) Start() error {
 			log.Printf("metrics worker stopped: %v", err)
 		}
 	}()
-	orderMailer := email.NewOrderEmailSender(emailSender, "orders@zentora.com")
+	orderMailer := email.NewOrderEmailSender(emailSender, "ezekielmulongo254@gmail.com")
 	cartService := cartsvc.NewService(cartRepo, redisClient)
 	wishlistService := wishlistsvc.NewService(wishlistRepo, redisClient)
 	orderService := orderusecase.NewService(
