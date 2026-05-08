@@ -191,7 +191,7 @@ func (s *Server) Start() error {
 			log.Printf("metrics worker stopped: %v", err)
 		}
 	}()
-
+	orderMailer := email.NewOrderEmailSender(emailSender, "orders@zentora.com")
 	cartService := cartsvc.NewService(cartRepo, redisClient)
 	wishlistService := wishlistsvc.NewService(wishlistRepo, redisClient)
 	orderService := orderusecase.NewService(
@@ -203,6 +203,7 @@ func (s *Server) Start() error {
 		inventoryRepo,
 		userAddressRepo,
 		discountRepo,
+		orderMailer,
 	)
 
 	_ = s.initializeSuperAdmin()

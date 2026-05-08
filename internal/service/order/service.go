@@ -52,15 +52,23 @@ type DiscountRepo interface {
 	RecordRedemption(ctx context.Context, tx pgx.Tx, red *discount.DiscountRedemption) error
 }
 
+// OrderMailer is the interface the service needs to fire order emails.
+// Both methods are best-effort: failures are logged but do not abort the order.
+type OrderMailer interface {
+	SendOrderConfirmation(toEmail string, ord *order.Order) error
+	SendAdminOrderNotification(ord *order.Order) error
+}
+
 type Service struct {
-	db            *pgxpool.Pool
-	orders        orderrepo.Repository
-	carts         CartRepo
-	products      ProductRepo
-	variants      VariantRepo
-	inventory     *postgres.InventoryRepository
-	addresses     AddressRepo
-	discounts     DiscountRepo
+	db        *pgxpool.Pool
+	orders    orderrepo.Repository
+	carts     CartRepo
+	products  ProductRepo
+	variants  VariantRepo
+	inventory *postgres.InventoryRepository
+	addresses AddressRepo
+	discounts DiscountRepo
+	mailer    OrderMailer
 }
 
 func NewService(
@@ -72,6 +80,7 @@ func NewService(
 	inventory *postgres.InventoryRepository,
 	addresses AddressRepo,
 	discounts DiscountRepo,
+	mailer OrderMailer, // pass nil to disable emails
 ) *Service {
 	return &Service{
 		db:        db,
@@ -82,6 +91,7 @@ func NewService(
 		inventory: inventory,
 		addresses: addresses,
 		discounts: discounts,
+		mailer:    mailer,
 	}
 }
 
@@ -105,7 +115,18 @@ func (s *Service) CreateGuestOrder(ctx context.Context, req *order.CreateGuestOr
 	}
 	_ = pm // stored later when payments module is implemented
 
-	return s.createOrderFromItems(ctx, nil, nil, req.Items, req.Shipping)
+	o, err := s.createOrderFromItems(ctx, nil, nil, req.Items, req.Shipping)
+	if err != nil {
+		return nil, err
+	}
+
+	// Fire emails best-effort; a mail failure must not roll back a committed order.
+	if s.mailer != nil {
+		//_ = s.mailer.SendOrderConfirmation(req.Email, o)
+		_ = s.mailer.SendAdminOrderNotification(o)
+	}
+
+	return o, nil
 }
 
 func (s *Service) CreateUserOrder(ctx context.Context, userID int64, req *order.CreateUserOrderRequest) (*order.Order, error) {
@@ -142,10 +163,12 @@ func (s *Service) CreateUserOrder(ctx context.Context, userID int64, req *order.
 			return nil, err
 		}
 
-		// clear cart after successful order (outside of tx OK since order is already committed,
-		// but ideally you’d do it in same tx by moving cart tables into same DB and using tx handle).
+		// Clear cart after successful order (outside of tx OK since order is already committed,
+		// but ideally you'd do it in same tx by moving cart tables into same DB and using tx handle).
 		_ = s.carts.ClearCart(ctx, *req.CartID)
 		_ = s.carts.MarkCartConverted(ctx, *req.CartID)
+
+		s.sendOrderEmails("", o)
 		return o, nil
 	}
 
@@ -153,7 +176,26 @@ func (s *Service) CreateUserOrder(ctx context.Context, userID int64, req *order.
 	if len(req.Items) == 0 {
 		return nil, order.ErrInvalidInput
 	}
-	return s.createOrderFromItems(ctx, &userID, nil, req.Items, ship)
+
+	o, err := s.createOrderFromItems(ctx, &userID, nil, req.Items, ship)
+	if err != nil {
+		return nil, err
+	}
+
+	s.sendOrderEmails("", o)
+	return o, nil
+}
+
+// sendOrderEmails fires the customer confirmation and admin notification.
+// Both are best-effort: a delivery failure never surfaces as an order error.
+func (s *Service) sendOrderEmails(customerEmail string, o *order.Order) {
+	if s.mailer == nil {
+		return
+	}
+	if customerEmail != "" {
+		_ = s.mailer.SendOrderConfirmation(customerEmail, o)
+	}
+	_ = s.mailer.SendAdminOrderNotification(o)
 }
 
 func (s *Service) resolveShippingForUser(ctx context.Context, userID int64, addressID *int64) (order.ShippingInfo, error) {
@@ -176,7 +218,7 @@ func (s *Service) resolveShippingForUser(ctx context.Context, userID int64, addr
 		return order.ShippingInfo{}, order.ErrAddressNotFound
 	}
 
-	// pick default if exists else first
+	// pick default if exists, else first
 	var a *user.Address
 	for i := range addrs {
 		if addrs[i].IsDefault {
@@ -231,11 +273,11 @@ func (s *Service) createOrderFromItems(
 		Items:       make([]order.OrderItem, 0, len(items)),
 	}
 
-	// Reserve/adjust inventory + compute pricing per item
+	// Reserve/adjust inventory + compute pricing per item.
 	// Strategy for throughput:
-	// - Reserve stock per variant (atomic SQL) inside tx.
-	// - Use a single location for now: choose the first inventory row for the variant.
-	//   (Later: allocation algorithm.)
+	//   - Reserve stock per variant (atomic SQL) inside tx.
+	//   - Use a single location for now: choose the first inventory row for the variant.
+	//     (Later: allocation algorithm.)
 	for _, it := range items {
 		if it.ProductID <= 0 || it.VariantID <= 0 || it.Quantity <= 0 {
 			return nil, order.ErrInvalidInput
