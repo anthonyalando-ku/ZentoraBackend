@@ -41,6 +41,7 @@ import (
 	wishlistHandler "zentora-service/internal/handlers/wishlist"
 	merchantsvc "zentora-service/internal/merchant/service"
 	merchantH "zentora-service/internal/merchant/handler"
+	sitemapH "zentora-service/internal/sitemap"
 
 	"github.com/gin-gonic/gin"
 	"github.com/imagekit-developer/imagekit-go/v2"
@@ -54,6 +55,7 @@ type Server struct {
 	logger      *zap.Logger
 	authService *authUsecase.AuthService
 	merchantService *merchantsvc.MerchantFeedService
+	sitemapHandler *sitemapH.Handler
 }
 
 func NewServer() *Server {
@@ -220,6 +222,9 @@ func (s *Server) Start() error {
 	merchantService := merchantsvc.New(pool, merchantCfg, merchantLogger)
 	s.merchantService = merchantService
 
+	sitemapHandler := sitemapH.NewHandler(pool)
+	s.sitemapHandler = sitemapHandler
+
 	_ = s.initializeSuperAdmin()
 
 	authHandlerInst := authHandler.NewAuthHandler(authService, s.logger)
@@ -253,6 +258,7 @@ func (s *Server) Start() error {
 		OrderHandler:     orderHandlerInst,
 		WishlistHandler:  wishListHandlerInst,
 		MerchantHandler:  merchantHandlerInst,
+		SitemapHandler:   sitemapHandler,
 	}
 	SetupRouter(s.engine, s.logger, handlers)
 

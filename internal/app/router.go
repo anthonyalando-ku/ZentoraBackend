@@ -2,18 +2,18 @@ package app
 
 import (
 	authHandler "zentora-service/internal/handlers/auth"
+	cartHandler "zentora-service/internal/handlers/cart"
 	catalogHandler "zentora-service/internal/handlers/catalog"
 	discoveryHandler "zentora-service/internal/handlers/discovery"
 	notifyHandler "zentora-service/internal/handlers/notification"
-	userHandler "zentora-service/internal/handlers/user"
-	wsHandler "zentora-service/internal/handlers/websocket"
-	cartHandler "zentora-service/internal/handlers/cart"
-	wishlistHandler "zentora-service/internal/handlers/wishlist"
 	orderHandler "zentora-service/internal/handlers/order"
 	reviewHandler "zentora-service/internal/handlers/review"
-	"zentora-service/internal/middleware"
+	userHandler "zentora-service/internal/handlers/user"
+	wsHandler "zentora-service/internal/handlers/websocket"
+	wishlistHandler "zentora-service/internal/handlers/wishlist"
 	merchantH "zentora-service/internal/merchant/handler"
-
+	"zentora-service/internal/middleware"
+	sitemapH "zentora-service/internal/sitemap"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -32,6 +32,8 @@ type Handlers struct {
 	ReviewHandler    *reviewHandler.Handler
 	AuthMiddleware   *middleware.AuthMiddleware
 	MerchantHandler  *merchantH.Handler
+	SitemapHandler *sitemapH.Handler
+
 }
 
 func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
@@ -41,6 +43,7 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 	r.Static("/static", "./static")
 
 	h.MerchantHandler.RegisterPublicRoutes(r)
+	h.SitemapHandler.RegisterRoutes(r)
 
 	api := r.Group("/api/v1")
 
