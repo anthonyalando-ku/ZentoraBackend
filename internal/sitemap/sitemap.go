@@ -32,7 +32,7 @@ func NewHandler(db *pgxpool.Pool) *Handler {
 
 // RegisterRoutes wires sitemap endpoints onto the root engine (no auth).
 func (h *Handler) RegisterRoutes(r *gin.Engine) {
-	r.GET("/sitemap-index.xml", h.SitemapIndex)
+	r.GET("/sitemaps/sitemap-index.xml", h.SitemapIndex)
 	r.GET("/sitemaps/products-:chunk.xml", h.ProductSitemap)
 }
 
@@ -103,7 +103,7 @@ func (h *Handler) SitemapIndex(c *gin.Context) {
 	// Product chunk sitemaps (served from the API)
 	for i := 1; i <= chunks; i++ {
 		idx.Sitemaps = append(idx.Sitemaps, SitemapEntry{
-			Loc:     fmt.Sprintf("%s/sitemaps/products-%d.xml", apiURL, i),
+			Loc:     fmt.Sprintf("%s/sitemaps/products-%d.xml", siteURL, i),
 			LastMod: today,
 		})
 	}
