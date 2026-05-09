@@ -33,6 +33,8 @@ type AppConfig struct {
 	ImageKitPrivateKey string
 	ImageKitPublicKey  string
 	ImageKitURL        string
+
+	StoreBaseURL	string  // "https://zentora.com" — no trailing slash
 }
 
 // Load loads environment variables into AppConfig.
@@ -46,6 +48,8 @@ func Load() AppConfig {
 		ImageKitPrivateKey:    getEnv("IMAGE_KIT_PRIVATE_KEY", ""),
 		ImageKitPublicKey:     getEnv("IMAGE_KIT_PUBLIC_KEY", ""),
 		ImageKitURL:           getEnv("IMAGE_KIT_URL_ENDPOINT", ""),
+
+		StoreBaseURL: getEnv("STORE_BASE_URL", "https://zentorashop.co.ke"),
 
 		JWT: jwt.Config{
 			PrivPath: getEnv("JWT_PRIVATE_KEY_PATH", "/app/secrets/jwt_private.pem"),

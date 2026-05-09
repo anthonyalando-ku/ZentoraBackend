@@ -12,6 +12,8 @@ import (
 	orderHandler "zentora-service/internal/handlers/order"
 	reviewHandler "zentora-service/internal/handlers/review"
 	"zentora-service/internal/middleware"
+	merchantH "zentora-service/internal/merchant/handler"
+
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -29,6 +31,7 @@ type Handlers struct {
 	OrderHandler     *orderHandler.Handler
 	ReviewHandler    *reviewHandler.Handler
 	AuthMiddleware   *middleware.AuthMiddleware
+	MerchantHandler  *merchantH.Handler
 }
 
 func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
@@ -36,6 +39,8 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 	// Example: GET /uploads/products/1234567890_samsung.jpg
 	r.Static("/uploads", "./uploads")
 	r.Static("/static", "./static")
+
+	h.MerchantHandler.RegisterPublicRoutes(r)
 
 	api := r.Group("/api/v1")
 
@@ -297,6 +302,12 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 	adminDiscovery.Use(h.AuthMiddleware.AdminOnly()...)
 	{
 		adminDiscovery.POST("/metrics/recompute", h.DiscoveryHandler.RecomputeMetrics)
+	}
+
+	adminMerchant := api.Group("/admin/merchant")
+	adminMerchant.Use(h.AuthMiddleware.AdminOnly()...)
+	{
+		h.MerchantHandler.RegisterRoutes(adminMerchant)
 	}
 
 	// ── Health ─────────────────────────────────────────────────────────────────

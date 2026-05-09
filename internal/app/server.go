@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -38,6 +39,8 @@ import (
 	wsHandlers "zentora-service/internal/websocket/handler"
 
 	wishlistHandler "zentora-service/internal/handlers/wishlist"
+	merchantsvc "zentora-service/internal/merchant/service"
+	merchantH "zentora-service/internal/merchant/handler"
 
 	"github.com/gin-gonic/gin"
 	"github.com/imagekit-developer/imagekit-go/v2"
@@ -50,6 +53,7 @@ type Server struct {
 	engine      *gin.Engine
 	logger      *zap.Logger
 	authService *authUsecase.AuthService
+	merchantService *merchantsvc.MerchantFeedService
 }
 
 func NewServer() *Server {
@@ -206,6 +210,16 @@ func (s *Server) Start() error {
 		orderMailer,
 	)
 
+	merchantLogger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	}))
+	merchantCfg := merchantsvc.DefaultConfig()
+	if s.cfg.StoreBaseURL != "" {
+		merchantCfg.StoreBaseURL = s.cfg.StoreBaseURL
+	}
+	merchantService := merchantsvc.New(pool, merchantCfg, merchantLogger)
+	s.merchantService = merchantService
+
 	_ = s.initializeSuperAdmin()
 
 	authHandlerInst := authHandler.NewAuthHandler(authService, s.logger)
@@ -217,6 +231,7 @@ func (s *Server) Start() error {
 	cartHandlerInst := cartHandler.NewHandler(cartService)
 	wishListHandlerInst := wishlistHandler.NewHandler(wishlistService)
 	orderHandlerInst := orderHandler.NewHandler(orderService)
+	merchantHandlerInst  := merchantH.NewHandler(merchantService, s.logger) 
 
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
@@ -237,6 +252,7 @@ func (s *Server) Start() error {
 		CartHandler:      cartHandlerInst,
 		OrderHandler:     orderHandlerInst,
 		WishlistHandler:  wishListHandlerInst,
+		MerchantHandler:  merchantHandlerInst,
 	}
 	SetupRouter(s.engine, s.logger, handlers)
 

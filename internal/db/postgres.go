@@ -11,7 +11,7 @@ import (
 )
 
 func ConnectDB() (*pgxpool.Pool, error) {
-	dbURL := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable",
+	dbURL := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=require",
 		os.Getenv("DB_USER"),
 		os.Getenv("DB_PASSWORD"),
 		os.Getenv("DB_HOST"),
@@ -19,50 +19,78 @@ func ConnectDB() (*pgxpool.Pool, error) {
 		os.Getenv("DB_NAME"),
 	)
 
-	var dbpool *pgxpool.Pool
-	var err error
+	// Parse config once — no point re-parsing on every retry attempt.
+	config, err := pgxpool.ParseConfig(dbURL)
+	if err != nil {
+		return nil, fmt.Errorf("db: parse config: %w", err)
+	}
 
-	maxRetries := 5
-	delay := 2 * time.Second
+	// ---------------------------------------------------------------------------
+	// Pool sizing
+	//
+	// MaxConns: PostgreSQL's default max_connections is 100. With one app server
+	// this cap of 25 leaves headroom for migrations, admin tools, and future
+	// horizontal scaling without exhausting the server. If you run multiple
+	// replicas behind a load balancer, set this via an env var and divide the
+	// total Postgres budget across all instances.
+	//
+	// MinConns: Keep 2 warm connections so the first request after an idle period
+	// does not pay connection establishment latency. Raising this above ~5 wastes
+	// server file descriptors for no throughput gain.
+	//
+	// MaxConnLifetime: Recycle connections every 30 minutes. Prevents stale
+	// connections accumulating after a Postgres restart or network hiccup.
+	//
+	// MaxConnIdleTime: Release connections idle for more than 5 minutes back to
+	// the OS. Keeps the pool lean during off-peak hours.
+	//
+	// HealthCheckPeriod: pgxpool background-checks idle connections every minute
+	// and evicts dead ones before your handlers ever try to use them.
+	// ---------------------------------------------------------------------------
+	config.MaxConns           = 25
+	config.MinConns           = 2
+	config.MaxConnLifetime    = 30 * time.Minute
+	config.MaxConnIdleTime    = 5 * time.Minute
+	config.HealthCheckPeriod  = 1 * time.Minute
 
-	log.Println("[DB] Connecting to PostgreSQL, URL:", dbURL)
+	const (
+		maxRetries   = 5
+		initialDelay = 2 * time.Second
+	)
 
-	for i := 1; i <= maxRetries; i++ {
-		log.Printf("[DB] Attempt %d/%d: connecting to database...", i, maxRetries)
+	delay := initialDelay
 
+	for attempt := 1; attempt <= maxRetries; attempt++ {
+		log.Printf("[DB] attempt %d/%d: connecting to database", attempt, maxRetries)
+
+		// Each attempt gets its own scoped context — a defer inside a loop would
+		// only fire at function return, leaking all intermediate contexts.
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		pool, connectErr := pgxpool.NewWithConfig(ctx, config)
+		cancel()
 
-		config, parseErr := pgxpool.ParseConfig(dbURL)
-		if parseErr != nil {
-			log.Printf("[DB] ❌ Failed to parse config: %v", parseErr)
-			return nil, parseErr
-		}
+		if connectErr != nil {
+			log.Printf("[DB] attempt %d failed (connect): %v", attempt, connectErr)
+		} else {
+			pingCtx, pingCancel := context.WithTimeout(context.Background(), 3*time.Second)
+			pingErr := pool.Ping(pingCtx)
+			pingCancel()
 
-		// tuning pool settings
-		config.MaxConns = 50
-		config.MinConns = 10
-		config.MaxConnLifetime = time.Hour
-		config.MaxConnIdleTime = 5 * time.Minute
-
-		dbpool, err = pgxpool.NewWithConfig(ctx, config)
-		if err == nil {
-			// test connection
-			if pingErr := dbpool.Ping(ctx); pingErr == nil {
-				log.Println("[DB] ✅ Connected successfully!")
-				return dbpool, nil
+			if pingErr == nil {
+				log.Printf("[DB] connected successfully on attempt %d", attempt)
+				return pool, nil
 			}
-			err = fmt.Errorf("ping failed: %w", err)
+
+			pool.Close()
+			log.Printf("[DB] attempt %d failed (ping): %v", attempt, pingErr)
 		}
 
-		log.Printf("[DB] ❌ Connection failed: %v", err)
-
-		if i < maxRetries {
-			log.Printf("[DB] Retrying in %s...", delay)
+		if attempt < maxRetries {
+			log.Printf("[DB] retrying in %s", delay)
 			time.Sleep(delay)
 			delay *= 2 // exponential backoff
 		}
 	}
 
-	return nil, fmt.Errorf("failed to connect to DB after %d attempts: %w", maxRetries, err)
+	return nil, fmt.Errorf("db: failed to connect after %d attempts", maxRetries)
 }
