@@ -90,29 +90,26 @@ func (r *ProductRepository) CreateProductTx(ctx context.Context, in *CreateProdu
 	}
 	return tx.Commit(ctx)
 }
-
+// buildProductGraph is called inside CreateProductTx.
+// All DB writes happen on the same pgx.Tx so the entire product graph is
+// atomic — including the search document.
 func (r *ProductRepository) buildProductGraph(ctx context.Context, tx pgx.Tx, in *CreateProductTxInput) error {
 	if err := insertProductTx(ctx, tx, in.Product); err != nil {
 		return err
 	}
 	productID := in.Product.ID
 
-	// NEW: create product search doc in same tx
-	if r.searchRepo != nil {
-		doc := productsearchsvc.BuildSearchDocument(in.Product)
-		if err := r.searchRepo.UpsertForProductTx(ctx, tx, productID, doc); err != nil {
-			return fmt.Errorf("create product search document: %w", err)
-		}
-	}
-
+	// ── Categories ────────────────────────────────────────────────────────────
 	if err := setProductCategoriesTx(ctx, tx, productID, in.CategoryIDs); err != nil {
 		return fmt.Errorf("set product categories: %w", err)
 	}
 
+	// ── Tags ──────────────────────────────────────────────────────────────────
 	if err := setProductTagsTx(ctx, tx, productID, in.TagNames); err != nil {
 		return fmt.Errorf("set product tags: %w", err)
 	}
 
+	// ── Images ────────────────────────────────────────────────────────────────
 	for i := range in.Images {
 		in.Images[i].ProductID = productID
 		if err := insertProductImageTx(ctx, tx, &in.Images[i]); err != nil {
@@ -120,12 +117,14 @@ func (r *ProductRepository) buildProductGraph(ctx context.Context, tx pgx.Tx, in
 		}
 	}
 
+	// ── Product-level attribute values ────────────────────────────────────────
 	if len(in.AttributeValueIDs) > 0 {
 		if err := setProductAttributeValuesTx(ctx, tx, productID, in.AttributeValueIDs); err != nil {
 			return fmt.Errorf("set product attribute values: %w", err)
 		}
 	}
 
+	// ── Variants ──────────────────────────────────────────────────────────────
 	for i := range in.Variants {
 		vi := &in.Variants[i]
 		v := buildVariantEntity(productID, vi)
@@ -146,6 +145,7 @@ func (r *ProductRepository) buildProductGraph(ctx context.Context, tx pgx.Tx, in
 		}
 	}
 
+	// ── Discount ─────────────────────────────────────────────────────────────
 	if in.DiscountID != nil {
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO discount_targets (discount_id, target_type, target_id)
@@ -156,7 +156,136 @@ func (r *ProductRepository) buildProductGraph(ctx context.Context, tx pgx.Tx, in
 		}
 	}
 
+	// ── Search document ───────────────────────────────────────────────────────
+	// Build last — after all relations are written so we can resolve names.
+	// We query within the same transaction so we see the rows we just inserted.
+	if r.searchRepo != nil {
+		searchIn, err := r.buildSearchInput(ctx, tx, in)
+		if err != nil {
+			return fmt.Errorf("build search input: %w", err)
+		}
+		doc := productsearchsvc.BuildSearchDocument(searchIn)
+		if err := r.searchRepo.UpsertForProductTx(ctx, tx, productID, doc); err != nil {
+			return fmt.Errorf("upsert search document: %w", err)
+		}
+	}
+
 	return nil
+}
+
+// buildSearchInput resolves human-readable names for all IDs attached to the
+// product so BuildSearchDocument can produce a rich tsvector source.
+// All queries run on the same transaction so they see the just-inserted rows.
+func (r *ProductRepository) buildSearchInput(
+	ctx context.Context,
+	tx pgx.Tx,
+	in *CreateProductTxInput,
+) (*productsearchsvc.SearchInput, error) {
+	si := &productsearchsvc.SearchInput{
+		Product:  in.Product,
+		TagNames: in.TagNames, // tag names are already strings in CreateProductTxInput
+	}
+
+	// ── Brand name ────────────────────────────────────────────────────────────
+	if in.Product.BrandID.Valid && in.Product.BrandID.Int64 > 0 {
+		var brandName string
+		err := tx.QueryRow(ctx,
+			`SELECT name FROM brands WHERE id = $1`,
+			in.Product.BrandID.Int64,
+		).Scan(&brandName)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return nil, fmt.Errorf("resolve brand name: %w", err)
+		}
+		si.BrandName = brandName
+	}
+
+	// ── Category names ────────────────────────────────────────────────────────
+	if len(in.CategoryIDs) > 0 {
+		rows, err := tx.Query(ctx,
+			`SELECT name FROM categories WHERE id = ANY($1)`,
+			in.CategoryIDs,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("resolve category names: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err != nil {
+				return nil, err
+			}
+			si.CategoryNames = append(si.CategoryNames, name)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	// ── Attribute names + values ──────────────────────────────────────────────
+	// Collect all attribute value IDs: product-level + all variant-level.
+	allValueIDs := make([]int64, 0, len(in.AttributeValueIDs))
+	allValueIDs = append(allValueIDs, in.AttributeValueIDs...)
+	for _, v := range in.Variants {
+		allValueIDs = append(allValueIDs, v.AttributeValueIDs...)
+	}
+	allValueIDs = dedupInt64(allValueIDs)
+
+	if len(allValueIDs) > 0 {
+		rows, err := tx.Query(ctx,
+			`SELECT a.name, av.value
+			 FROM attribute_values av
+			 JOIN attributes a ON a.id = av.attribute_id
+			 WHERE av.id = ANY($1)`,
+			allValueIDs,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("resolve attribute names/values: %w", err)
+		}
+		defer rows.Close()
+
+		seenAttr := make(map[string]struct{})
+		seenVal  := make(map[string]struct{})
+
+		for rows.Next() {
+			var attrName, valueName string
+			if err := rows.Scan(&attrName, &valueName); err != nil {
+				return nil, err
+			}
+			if _, ok := seenAttr[attrName]; !ok {
+				si.AttributeNames = append(si.AttributeNames, attrName)
+				seenAttr[attrName] = struct{}{}
+			}
+			if _, ok := seenVal[valueName]; !ok {
+				si.AttributeValues = append(si.AttributeValues, valueName)
+				seenVal[valueName] = struct{}{}
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	// ── Variant SKUs ──────────────────────────────────────────────────────────
+	for _, v := range in.Variants {
+		if s := strings.TrimSpace(v.SKU); s != "" {
+			si.VariantSKUs = append(si.VariantSKUs, s)
+		}
+	}
+
+	return si, nil
+}
+
+// dedupInt64 returns a new slice with duplicates removed, preserving order.
+func dedupInt64(ids []int64) []int64 {
+	seen := make(map[int64]struct{}, len(ids))
+	out  := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := seen[id]; !ok {
+			seen[id] = struct{}{}
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 func (r *ProductRepository) GetProductByID(ctx context.Context, id int64) (*product.Product, error) {
