@@ -578,24 +578,24 @@ func (r *DiscoveryRepository) getEditorialCandidates(ctx context.Context, req *d
 }
 
 func (r *DiscoveryRepository) getSearchCandidates(ctx context.Context, req *discovery.FeedRequest) ([]discovery.Candidate, error) {
-	const q = searchCandidateQuery
-
 	return r.runFilteredCandidateQuery(ctx, req, candidateQuery{
-		query: q,
+		query: searchCandidateQuery,
 		args: []any{
-			*req.Query,
-			product.StatusActive,
-			defaultSearchTextConfig,
-			searchTextWeight,
-			searchPopularityWeight,
-			searchConversionWeight,
-			searchRatingWeight,
-			searchTrendingWeight,
+			*req.Query,           // $1 — raw query text
+			product.StatusActive, // $2 — status filter
+			// $3 (regconfig) removed — inlined as 'simple' literal in the SQL
 		},
 		orderBy: searchCandidateOrderBy,
-		signals: []string{"text_relevance", "popularity_score", "conversion_rate", "rating_score", "trending_score"},
+		signals: []string{
+			"text_relevance",
+			"popularity_score",
+			"conversion_rate",
+			"rating_score",
+			"trending_score",
+		},
 	}, "get search candidates")
 }
+ 
 
 func (r *DiscoveryRepository) runFilteredCandidateQuery(ctx context.Context, req *discovery.FeedRequest, candidate candidateQuery, operation string) ([]discovery.Candidate, error) {
 	filterCTE := buildEligibleProductsCTE(len(candidate.args) + 1)

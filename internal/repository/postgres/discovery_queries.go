@@ -132,14 +132,12 @@ FROM all_suggestions
 ORDER BY score DESC, text ASC
 LIMIT $4`
 
-
 const searchCandidateQuery = `
 WITH search_input AS (
     SELECT
-        LOWER($1)                                                       AS raw,
-        LOWER($1) || '%'                                                AS like_prefix,
-        -- plainto_tsquery is safe for arbitrary user text
-        plainto_tsquery($3::regconfig, LOWER($1))                       AS ts_query
+        LOWER($1)                            AS raw,
+        LOWER($1) || '%'                     AS like_prefix,
+        plainto_tsquery('simple', LOWER($1)) AS ts_query
 ),
 fts_candidates AS (
     SELECT
@@ -149,19 +147,17 @@ fts_candidates AS (
     CROSS JOIN search_input si
     JOIN products p ON p.id = psd.product_id
     WHERE p.status = $2
-      -- guard: empty tsquery (e.g. stop words only) skips FTS entirely
       AND si.ts_query <> ''::tsquery
       AND psd.search_vector @@ si.ts_query
 ),
 trigram_candidates AS (
     SELECT
         psd.product_id,
-        -- scale to 0–1 range comparable with ts_rank_cd
         LEAST(
             GREATEST(
                 word_similarity(si.raw, LOWER(p.name)),
                 similarity(LOWER(psd.search_document), si.raw)
-            ) * 1.2,   -- slight boost so partial matches stay competitive
+            ) * 1.2,
             1.0
         )::DOUBLE PRECISION AS text_relevance
     FROM product_search_documents psd
@@ -169,11 +165,8 @@ trigram_candidates AS (
     JOIN products p ON p.id = psd.product_id
     WHERE p.status = $2
       AND (
-          -- name prefix match (fast, uses btree index on lower(name))
           LOWER(p.name) LIKE si.like_prefix
-          -- word-level trigram on the name (good for mid-string matches)
           OR word_similarity(si.raw, LOWER(p.name)) > 0.2
-          -- full-document trigram fallback
           OR similarity(LOWER(psd.search_document), si.raw) > 0.15
       )
 ),
@@ -189,14 +182,14 @@ combined AS (
 SELECT
     c.product_id,
     c.text_relevance,
-    COALESCE(pm.weekly_purchases, 0)::DOUBLE PRECISION  AS popularity_score,
-    COALESCE(pm.conversion_rate,  0)::DOUBLE PRECISION  AS conversion_rate,
-    COALESCE(p.rating,            0)::DOUBLE PRECISION  AS rating_score,
-    COALESCE(pm.trending_score,   0)::DOUBLE PRECISION  AS trending_score
+    COALESCE(pm.weekly_purchases, 0)::DOUBLE PRECISION AS popularity_score,
+    COALESCE(pm.conversion_rate,  0)::DOUBLE PRECISION AS conversion_rate,
+    COALESCE(p.rating,            0)::DOUBLE PRECISION AS rating_score,
+    COALESCE(pm.trending_score,   0)::DOUBLE PRECISION AS trending_score
 FROM combined c
 JOIN products p ON p.id = c.product_id
 LEFT JOIN product_metrics pm ON pm.product_id = c.product_id`
-
+ 
 const searchCandidateOrderBy = `
     (0.50 * ranked.text_relevance
    + 0.20 * ranked.popularity_score

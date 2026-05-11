@@ -3,6 +3,7 @@ package discovery
 import (
 	"context"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -98,6 +99,7 @@ func (h *Handler) Search(c *gin.Context) {
 
 	items, err := h.discovery.GetFeed(c.Request.Context(), req)
 	if err != nil {
+		log.Printf("search feed: %v", err)
 		handleError(c, err)
 		return
 	}
