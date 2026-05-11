@@ -190,7 +190,7 @@ func (r *ProductRepository) buildSearchInput(
 	if in.Product.BrandID.Valid && in.Product.BrandID.Int64 > 0 {
 		var brandName string
 		err := tx.QueryRow(ctx,
-			`SELECT name FROM brands WHERE id = $1`,
+			`SELECT name FROM product_brands WHERE id = $1`,
 			in.Product.BrandID.Int64,
 		).Scan(&brandName)
 		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
@@ -202,7 +202,7 @@ func (r *ProductRepository) buildSearchInput(
 	// ── Category names ────────────────────────────────────────────────────────
 	if len(in.CategoryIDs) > 0 {
 		rows, err := tx.Query(ctx,
-			`SELECT name FROM categories WHERE id = ANY($1)`,
+			`SELECT name FROM product_categories WHERE id = ANY($1)`,
 			in.CategoryIDs,
 		)
 		if err != nil {
