@@ -48,6 +48,7 @@ func saveImages(files []*multipart.FileHeader, ik *imagekit.Client) ([]string, e
 	// Semaphore channel caps parallelism without a worker pool.
 	sem := make(chan struct{}, maxConcurrent)
 
+loop:
 	for i, fh := range files {
 		i, fh := i, fh // capture loop variables
 
@@ -56,7 +57,7 @@ func saveImages(files []*multipart.FileHeader, ik *imagekit.Client) ([]string, e
 			// slot acquired — launch goroutine
 		case <-ctx.Done():
 			// a previous goroutine already failed; stop queueing
-			break
+			break loop
 		}
 
 		g.Go(func() error {
