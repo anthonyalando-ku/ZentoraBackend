@@ -172,15 +172,15 @@ func FindOrCreateTagTx(ctx context.Context, ex interface {
 		WITH ins AS (
 			INSERT INTO tags (name, slug)
 			VALUES ($1, $2)
-			ON CONFLICT (name) DO NOTHING
-			ON CONFLICT (slug) DO NOTHING
+			ON CONFLICT DO NOTHING
 			RETURNING id, name, slug
 		)
 		SELECT id, name, slug FROM ins
 		UNION ALL
-		SELECT id, name, slug FROM tags
+		SELECT id, name, slug
+		FROM tags
 		WHERE name = $1 OR slug = $2
-		LIMIT 1`
+		LIMIT 1;`
 
 	var t tag.Tag
 	if err := ex.QueryRow(ctx, q, name, slug).Scan(&t.ID, &t.Name, &t.Slug); err != nil {
