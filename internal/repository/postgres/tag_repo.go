@@ -163,11 +163,24 @@ func FindOrCreateTagTx(ctx context.Context, ex interface {
 }, name string) (*tag.Tag, error) {
 	slug := GenerateSlug(name)
 
+	// Two-step upsert:
+	// 1. attempt insert; on EITHER unique conflict (name or slug) do nothing.
+	// 2. SELECT returns the winning row whether it was just inserted or already existed.
+	// This is safe under concurrent writes — the SELECT re-reads after the
+	// failed insert so it always sees the committed conflicting row.
 	const q = `
-		INSERT INTO tags (name, slug)
-		VALUES ($1, $2)
-		ON CONFLICT (name) DO UPDATE SET slug = EXCLUDED.slug
-		RETURNING id, name, slug`
+		WITH ins AS (
+			INSERT INTO tags (name, slug)
+			VALUES ($1, $2)
+			ON CONFLICT (name) DO NOTHING
+			ON CONFLICT (slug) DO NOTHING
+			RETURNING id, name, slug
+		)
+		SELECT id, name, slug FROM ins
+		UNION ALL
+		SELECT id, name, slug FROM tags
+		WHERE name = $1 OR slug = $2
+		LIMIT 1`
 
 	var t tag.Tag
 	if err := ex.QueryRow(ctx, q, name, slug).Scan(&t.ID, &t.Name, &t.Slug); err != nil {
