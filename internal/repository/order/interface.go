@@ -2,6 +2,7 @@ package orderrepo
 
 import (
 	"context"
+	"time"
 
 	"zentora-service/internal/domain/order"
 
@@ -21,4 +22,11 @@ type Repository interface {
 	GetOrderByNumber(ctx context.Context, orderNumber string) (*order.Order, error)
 	UpdateOrderStatus(ctx context.Context, id int64, status order.OrderStatus) (*order.Order, error)
 	OrderStats(ctx context.Context) (*order.OrderStatsResponse, error)
+
+	// ListPendingOrdersNeedingReminder returns registered-user orders still
+	// pending after olderThan that haven't had a reminder sent yet.
+	ListPendingOrdersNeedingReminder(ctx context.Context, olderThan time.Duration) ([]order.PendingReminderCandidate, error)
+	// MarkReminderSent records that a pending-order reminder was emailed, so
+	// the next worker tick does not notify the customer again for it.
+	MarkReminderSent(ctx context.Context, orderID int64) error
 }

@@ -3,19 +3,22 @@ package email
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"zentora-service/internal/domain/order"
 )
 
 // OrderEmailSender sends order-related emails to customers and admins.
 type OrderEmailSender struct {
-	sender     *EmailSender
-	adminEmail string
+	sender       *EmailSender
+	adminEmail   string
+	storeBaseURL string
 }
 
-// NewOrderEmailSender creates an OrderEmailSender.
-func NewOrderEmailSender(sender *EmailSender, adminEmail string) *OrderEmailSender {
-	return &OrderEmailSender{sender: sender, adminEmail: adminEmail}
+// NewOrderEmailSender creates an OrderEmailSender. storeBaseURL is used to
+// build the "log in to your account" link in reminder emails (no trailing slash).
+func NewOrderEmailSender(sender *EmailSender, adminEmail string, storeBaseURL string) *OrderEmailSender {
+	return &OrderEmailSender{sender: sender, adminEmail: adminEmail, storeBaseURL: storeBaseURL}
 }
 
 // SendOrderConfirmation sends the customer confirmation email.
@@ -40,6 +43,20 @@ func (o *OrderEmailSender) SendAdminOrderNotification(ord *order.Order) error {
 	body := buildAdminNotificationBody(ord)
 	if err := o.sender.Send(o.adminEmail, subject, body); err != nil {
 		return fmt.Errorf("order notification to admin: %w", err)
+	}
+	return nil
+}
+
+// SendPendingOrderReminder nudges a customer whose order has stayed in
+// "pending" status, prompting them to log in and either complete or update it.
+func (o *OrderEmailSender) SendPendingOrderReminder(toEmail, customerName, orderNumber string, totalAmount float64, currency string, placedAt time.Time) error {
+	if toEmail == "" || orderNumber == "" {
+		return fmt.Errorf("order email: missing recipient or order number")
+	}
+	subject := fmt.Sprintf("Your order %s is still pending", orderNumber)
+	body := buildPendingReminderBody(o.storeBaseURL, customerName, orderNumber, totalAmount, currency, placedAt)
+	if err := o.sender.Send(toEmail, subject, body); err != nil {
+		return fmt.Errorf("pending order reminder to customer: %w", err)
 	}
 	return nil
 }
@@ -239,6 +256,67 @@ func buildAdminNotificationBody(ord *order.Order) string {
 	sb.WriteString(`
 <div class="footer">
   Zentora Admin Notification &nbsp;·&nbsp; Do not share this email.
+</div>
+</div>`) // close .wrapper
+
+	return sb.String()
+}
+
+func buildPendingReminderBody(storeBaseURL, customerName, orderNumber string, totalAmount float64, currency string, placedAt time.Time) string {
+	var sb strings.Builder
+
+	greetName := customerName
+	if strings.TrimSpace(greetName) == "" {
+		greetName = "there"
+	}
+
+	loginURL := strings.TrimRight(storeBaseURL, "/") + "/login"
+
+	sb.WriteString(emailStyles)
+	sb.WriteString(`<div class="wrapper">`)
+
+	sb.WriteString(fmt.Sprintf(`
+<div class="header" style="background:#df7412;">
+  <h1>Your order is waiting</h1>
+  <p>Hi %s, your order hasn't been completed yet.</p>
+</div>
+<div class="body">
+`, greetName))
+
+	sb.WriteString(fmt.Sprintf(`
+<div class="meta-box" style="background:#fffbeb;border-color:#fde68a;">
+  <div class="row"><span class="label">Order Number</span><span class="value">%s</span></div>
+  <div class="row"><span class="label">Placed On</span><span class="value">%s</span></div>
+  <div class="row"><span class="label">Total</span>
+    <span class="value" style="color:#004b8f;">%s %.2f</span></div>
+</div>
+`, orderNumber, placedAt.Format("Jan 2, 2006 15:04"), currency, totalAmount))
+
+	sb.WriteString(fmt.Sprintf(`
+<p style="font-size:14px;color:#374151;line-height:1.7;">
+  Order <strong>%s</strong> is still marked <strong>pending</strong> and needs your attention.
+  Please log in to your account to:
+</p>
+<ul style="margin:12px 0 20px 20px;font-size:14px;color:#374151;line-height:1.9;">
+  <li>Review and <strong>complete</strong> the order (confirm payment/delivery details), or</li>
+  <li><strong>Update</strong> the shipping details or items if something changed, or</li>
+  <li><strong>Cancel</strong> it if you no longer want it, so we can free up the reserved stock.</li>
+</ul>
+<div style="text-align:center;margin:24px 0;">
+  <a href="%s" style="display:inline-block;background:#004b8f;color:#fff;text-decoration:none;
+     padding:13px 28px;border-radius:8px;font-weight:600;font-size:14px;">
+    Log In &amp; Review Order
+  </a>
+</div>
+<p style="font-size:12px;color:#9ca3af;text-align:center;">
+  Once logged in, find this order under "My Orders" using number %s.
+</p>
+`, orderNumber, loginURL, orderNumber))
+
+	sb.WriteString(`</div>`) // close .body
+	sb.WriteString(`
+<div class="footer">
+  &copy; Zentora. All rights reserved. This is an automated reminder about your pending order.
 </div>
 </div>`) // close .wrapper
 

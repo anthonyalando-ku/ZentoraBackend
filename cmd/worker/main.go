@@ -4,11 +4,13 @@ import (
 	"context"
 	"log"
 	"os/signal"
+	"sync"
 	"syscall"
 
 	"zentora-service/internal/config"
 	"zentora-service/internal/db"
 	"zentora-service/internal/repository/postgres"
+	"zentora-service/internal/service/email"
 	workerservice "zentora-service/internal/service/worker"
 
 	"github.com/joho/godotenv"
@@ -27,14 +29,42 @@ func main() {
 	}
 	defer pool.Close()
 
-	repo := postgres.NewDiscoveryRepository(pool)
-	jobService := workerservice.NewMetricsJobService(repo, cfg.WorkerMetricsInterval, log.Default())
+	discoveryRepo := postgres.NewDiscoveryRepository(pool)
+	metricsJob := workerservice.NewMetricsJobService(discoveryRepo, cfg.WorkerMetricsInterval, log.Default())
+
+	emailSender := email.NewEmailSender(
+		cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass,
+		cfg.SMTPFromName, cfg.BaseURL, cfg.LogoURL, cfg.SMTPSecure,
+	)
+	orderMailer := email.NewOrderEmailSender(emailSender, cfg.AdminEmail, cfg.StoreBaseURL)
+	orderRepo := postgres.NewOrderRepository(pool)
+	reminderJob := workerservice.NewOrderReminderJobService(
+		orderRepo, orderMailer, cfg.OrderReminderPendingAfter, cfg.WorkerOrderReminderInterval, log.Default(),
+	)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer cancel()
-	log.Printf("🚀 Metrics worker running with interval %s", cfg.WorkerMetricsInterval)
-	if err := jobService.Start(ctx); err != nil {
-		log.Fatalf("❌ Metrics worker stopped with error: %v", err)
-	}
-	log.Println("✅ Metrics worker stopped gracefully")
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		log.Printf("🚀 Metrics worker running with interval %s", cfg.WorkerMetricsInterval)
+		if err := metricsJob.Start(ctx); err != nil {
+			log.Printf("❌ Metrics worker stopped with error: %v", err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		log.Printf("🚀 Pending-order reminder worker running with interval %s (reminds after %s pending)",
+			cfg.WorkerOrderReminderInterval, cfg.OrderReminderPendingAfter)
+		if err := reminderJob.Start(ctx); err != nil {
+			log.Printf("❌ Pending-order reminder worker stopped with error: %v", err)
+		}
+	}()
+
+	wg.Wait()
+	log.Println("✅ Workers stopped gracefully")
 }

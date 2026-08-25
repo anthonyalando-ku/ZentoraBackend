@@ -18,6 +18,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 )
 
 type CartRepo interface {
@@ -69,6 +70,7 @@ type Service struct {
 	addresses AddressRepo
 	discounts DiscountRepo
 	mailer    OrderMailer
+	logger    *zap.Logger
 }
 
 func NewService(
@@ -81,7 +83,11 @@ func NewService(
 	addresses AddressRepo,
 	discounts DiscountRepo,
 	mailer OrderMailer, // pass nil to disable emails
+	logger *zap.Logger,
 ) *Service {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &Service{
 		db:        db,
 		orders:    orders,
@@ -92,6 +98,7 @@ func NewService(
 		addresses: addresses,
 		discounts: discounts,
 		mailer:    mailer,
+		logger:    logger,
 	}
 }
 
@@ -123,7 +130,10 @@ func (s *Service) CreateGuestOrder(ctx context.Context, req *order.CreateGuestOr
 	// Fire emails best-effort; a mail failure must not roll back a committed order.
 	if s.mailer != nil {
 		//_ = s.mailer.SendOrderConfirmation(req.Email, o)
-		_ = s.mailer.SendAdminOrderNotification(o)
+		if err := s.mailer.SendAdminOrderNotification(o); err != nil {
+			s.logger.Error("failed to send admin new-order notification",
+				zap.String("order_number", o.OrderNumber), zap.Error(err))
+		}
 	}
 
 	return o, nil
@@ -193,9 +203,15 @@ func (s *Service) sendOrderEmails(customerEmail string, o *order.Order) {
 		return
 	}
 	if customerEmail != "" {
-		_ = s.mailer.SendOrderConfirmation(customerEmail, o)
+		if err := s.mailer.SendOrderConfirmation(customerEmail, o); err != nil {
+			s.logger.Error("failed to send customer order confirmation",
+				zap.String("order_number", o.OrderNumber), zap.String("email", customerEmail), zap.Error(err))
+		}
 	}
-	_ = s.mailer.SendAdminOrderNotification(o)
+	if err := s.mailer.SendAdminOrderNotification(o); err != nil {
+		s.logger.Error("failed to send admin new-order notification",
+			zap.String("order_number", o.OrderNumber), zap.Error(err))
+	}
 }
 
 func (s *Service) resolveShippingForUser(ctx context.Context, userID int64, addressID *int64) (order.ShippingInfo, error) {

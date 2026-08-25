@@ -408,3 +408,56 @@ func (r *OrderRepository) OrderStats(ctx context.Context) (*order.OrderStatsResp
 	s.UpdatedAt = time.Now().UTC()
 	return &s, nil
 }
+
+// ListPendingOrdersNeedingReminder returns registered-user orders still
+// pending after olderThan that have not had a reminder emailed yet.
+// Guest orders (user_id IS NULL) are skipped since no email is captured for them.
+func (r *OrderRepository) ListPendingOrdersNeedingReminder(ctx context.Context, olderThan time.Duration) ([]order.PendingReminderCandidate, error) {
+	const q = `
+		SELECT o.id, o.order_number, o.total_amount, o.currency, o.created_at,
+		       ai.email, COALESCE(up.full_name, '')
+		FROM orders o
+		JOIN auth_identities ai ON ai.id = o.user_id
+		LEFT JOIN user_profiles up ON up.identity_id = ai.id
+		WHERE o.status = 'pending'
+		  AND o.reminder_sent_at IS NULL
+		  AND o.user_id IS NOT NULL
+		  AND ai.email IS NOT NULL
+		  AND o.created_at <= $1
+		ORDER BY o.created_at ASC
+	`
+
+	cutoff := time.Now().UTC().Add(-olderThan)
+
+	rows, err := r.db.Query(ctx, q, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("list pending orders needing reminder: %w", err)
+	}
+	defer rows.Close()
+
+	out := make([]order.PendingReminderCandidate, 0, 16)
+	for rows.Next() {
+		var c order.PendingReminderCandidate
+		if err := rows.Scan(
+			&c.OrderID, &c.OrderNumber, &c.TotalAmount, &c.Currency, &c.CreatedAt,
+			&c.CustomerEmail, &c.CustomerName,
+		); err != nil {
+			return nil, fmt.Errorf("scan pending reminder candidate: %w", err)
+		}
+		out = append(out, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("pending reminder rows: %w", err)
+	}
+	return out, nil
+}
+
+// MarkReminderSent records that a pending-order reminder was emailed for id,
+// so the next worker tick will not notify the customer again for it.
+func (r *OrderRepository) MarkReminderSent(ctx context.Context, id int64) error {
+	const q = `UPDATE orders SET reminder_sent_at = NOW() WHERE id = $1`
+	if _, err := r.db.Exec(ctx, q, id); err != nil {
+		return fmt.Errorf("mark reminder sent: %w", err)
+	}
+	return nil
+}

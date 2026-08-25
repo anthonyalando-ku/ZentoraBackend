@@ -16,6 +16,13 @@ type AppConfig struct {
 	RedisPass             string
 	WorkerMetricsInterval time.Duration
 
+	// Order reminders
+	WorkerOrderReminderInterval time.Duration
+	OrderReminderPendingAfter  time.Duration
+
+	// Notifications
+	AdminEmail string
+
 	// JWT
 	JWT jwt.Config
 
@@ -45,6 +52,14 @@ func Load() AppConfig {
 		RedisAddr:             getEnv("REDIS_ADDR", "redis-zentora:6379"),
 		RedisPass:             getEnv("REDIS_PASS", ""),
 		WorkerMetricsInterval: getEnvDuration("WORKER_METRICS_INTERVAL", 15*time.Minute),
+
+		WorkerOrderReminderInterval: getEnvDuration("WORKER_ORDER_REMINDER_INTERVAL", 30*time.Minute),
+		OrderReminderPendingAfter:  getEnvDuration("ORDER_REMINDER_PENDING_AFTER", 24*time.Hour),
+
+		// Falls back to the address the platform owner has used historically so
+		// existing deployments keep working; override with ADMIN_EMAIL per environment.
+		AdminEmail: getEnv("ADMIN_EMAIL", "ezekielmulongo254@gmail.com"),
+
 		ImageKitPrivateKey:    getEnv("IMAGE_KIT_PRIVATE_KEY", ""),
 		ImageKitPublicKey:     getEnv("IMAGE_KIT_PUBLIC_KEY", ""),
 		ImageKitURL:           getEnv("IMAGE_KIT_URL_ENDPOINT", ""),

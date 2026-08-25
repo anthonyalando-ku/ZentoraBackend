@@ -43,6 +43,18 @@ type UpdateOrderStatusRequest struct {
 	Note   string      `json:"note"`   // optional (future: audit trail)
 }
 
+// PendingReminderCandidate is a pending order that has crossed the reminder
+// threshold and belongs to a registered user with a known email.
+type PendingReminderCandidate struct {
+	OrderID       int64
+	OrderNumber   string
+	TotalAmount   float64
+	Currency      string
+	CreatedAt     time.Time
+	CustomerEmail string
+	CustomerName  string
+}
+
 // For admin dashboard
 type OrderStatsResponse struct {
 	TotalOrders     int64   `json:"total_orders"`
