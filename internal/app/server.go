@@ -197,7 +197,7 @@ func (s *Server) Start() error {
 			log.Printf("metrics worker stopped: %v", err)
 		}
 	}()
-	orderMailer := email.NewOrderEmailSender(emailSender, s.cfg.AdminEmail, s.cfg.StoreBaseURL)
+	orderMailer := email.NewOrderEmailSender(emailSender, s.cfg.AdminEmail)
 	cartService := cartsvc.NewService(cartRepo, redisClient)
 	wishlistService := wishlistsvc.NewService(wishlistRepo, redisClient)
 	orderService := orderusecase.NewService(

@@ -3,22 +3,19 @@ package email
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"zentora-service/internal/domain/order"
 )
 
 // OrderEmailSender sends order-related emails to customers and admins.
 type OrderEmailSender struct {
-	sender       *EmailSender
-	adminEmail   string
-	storeBaseURL string
+	sender     *EmailSender
+	adminEmail string
 }
 
-// NewOrderEmailSender creates an OrderEmailSender. storeBaseURL is used to
-// build the "log in to your account" link in reminder emails (no trailing slash).
-func NewOrderEmailSender(sender *EmailSender, adminEmail string, storeBaseURL string) *OrderEmailSender {
-	return &OrderEmailSender{sender: sender, adminEmail: adminEmail, storeBaseURL: storeBaseURL}
+// NewOrderEmailSender creates an OrderEmailSender.
+func NewOrderEmailSender(sender *EmailSender, adminEmail string) *OrderEmailSender {
+	return &OrderEmailSender{sender: sender, adminEmail: adminEmail}
 }
 
 // SendOrderConfirmation sends the customer confirmation email.
@@ -47,16 +44,17 @@ func (o *OrderEmailSender) SendAdminOrderNotification(ord *order.Order) error {
 	return nil
 }
 
-// SendPendingOrderReminder nudges a customer whose order has stayed in
-// "pending" status, prompting them to log in and either complete or update it.
-func (o *OrderEmailSender) SendPendingOrderReminder(toEmail, customerName, orderNumber string, totalAmount float64, currency string, placedAt time.Time) error {
-	if toEmail == "" || orderNumber == "" {
-		return fmt.Errorf("order email: missing recipient or order number")
+// SendPendingOrdersAdminReminder alerts the configured admin address about
+// orders that have stayed in "pending" status past the reminder threshold,
+// so they can log in and either complete or update each one.
+func (o *OrderEmailSender) SendPendingOrdersAdminReminder(candidates []order.PendingReminderCandidate) error {
+	if len(candidates) == 0 {
+		return nil
 	}
-	subject := fmt.Sprintf("Your order %s is still pending", orderNumber)
-	body := buildPendingReminderBody(o.storeBaseURL, customerName, orderNumber, totalAmount, currency, placedAt)
-	if err := o.sender.Send(toEmail, subject, body); err != nil {
-		return fmt.Errorf("pending order reminder to customer: %w", err)
+	subject := fmt.Sprintf("⏳ %d order(s) still pending — action needed", len(candidates))
+	body := buildPendingOrdersAdminReminderBody(candidates)
+	if err := o.sender.Send(o.adminEmail, subject, body); err != nil {
+		return fmt.Errorf("pending orders reminder to admin: %w", err)
 	}
 	return nil
 }
@@ -262,61 +260,66 @@ func buildAdminNotificationBody(ord *order.Order) string {
 	return sb.String()
 }
 
-func buildPendingReminderBody(storeBaseURL, customerName, orderNumber string, totalAmount float64, currency string, placedAt time.Time) string {
+// buildPendingOrdersAdminReminderBody renders a digest of all orders that
+// have been pending too long, for the store admin/owner (not the customer).
+func buildPendingOrdersAdminReminderBody(candidates []order.PendingReminderCandidate) string {
 	var sb strings.Builder
-
-	greetName := customerName
-	if strings.TrimSpace(greetName) == "" {
-		greetName = "there"
-	}
-
-	loginURL := strings.TrimRight(storeBaseURL, "/") + "/login"
 
 	sb.WriteString(emailStyles)
 	sb.WriteString(`<div class="wrapper">`)
 
 	sb.WriteString(fmt.Sprintf(`
 <div class="header" style="background:#df7412;">
-  <h1>Your order is waiting</h1>
-  <p>Hi %s, your order hasn't been completed yet.</p>
+  <h1>⏳ Orders Awaiting Action</h1>
+  <p>%d order(s) have been pending for a while and need a decision.</p>
 </div>
 <div class="body">
-`, greetName))
-
-	sb.WriteString(fmt.Sprintf(`
-<div class="meta-box" style="background:#fffbeb;border-color:#fde68a;">
-  <div class="row"><span class="label">Order Number</span><span class="value">%s</span></div>
-  <div class="row"><span class="label">Placed On</span><span class="value">%s</span></div>
-  <div class="row"><span class="label">Total</span>
-    <span class="value" style="color:#004b8f;">%s %.2f</span></div>
-</div>
-`, orderNumber, placedAt.Format("Jan 2, 2006 15:04"), currency, totalAmount))
-
-	sb.WriteString(fmt.Sprintf(`
-<p style="font-size:14px;color:#374151;line-height:1.7;">
-  Order <strong>%s</strong> is still marked <strong>pending</strong> and needs your attention.
-  Please log in to your account to:
+<p style="font-size:14px;color:#374151;line-height:1.7;margin-bottom:16px;">
+  Please log in to the admin dashboard and, for each order below, either
+  <strong>complete</strong> it (confirm payment/fulfilment) or
+  <strong>update its status</strong> to whatever's relevant (e.g. cancelled, shipped)
+  so it stops sitting idle.
 </p>
-<ul style="margin:12px 0 20px 20px;font-size:14px;color:#374151;line-height:1.9;">
-  <li>Review and <strong>complete</strong> the order (confirm payment/delivery details), or</li>
-  <li><strong>Update</strong> the shipping details or items if something changed, or</li>
-  <li><strong>Cancel</strong> it if you no longer want it, so we can free up the reserved stock.</li>
-</ul>
-<div style="text-align:center;margin:24px 0;">
-  <a href="%s" style="display:inline-block;background:#004b8f;color:#fff;text-decoration:none;
-     padding:13px 28px;border-radius:8px;font-weight:600;font-size:14px;">
-    Log In &amp; Review Order
-  </a>
-</div>
-<p style="font-size:12px;color:#9ca3af;text-align:center;">
-  Once logged in, find this order under "My Orders" using number %s.
-</p>
-`, orderNumber, loginURL, orderNumber))
+`, len(candidates)))
+
+	sb.WriteString(`
+<table class="items-table">
+  <thead>
+    <tr>
+      <th align="left">Order Number</th>
+      <th align="left">Placed By</th>
+      <th align="left">Pending Since</th>
+      <th align="right">Total</th>
+    </tr>
+  </thead>
+  <tbody>
+`)
+	for _, c := range candidates {
+		placedBy := "Guest"
+		if c.UserID != nil {
+			placedBy = c.CustomerName
+			if strings.TrimSpace(placedBy) == "" {
+				placedBy = c.CustomerEmail
+			}
+			if strings.TrimSpace(placedBy) == "" {
+				placedBy = fmt.Sprintf("User ID %d", *c.UserID)
+			}
+		}
+		sb.WriteString(fmt.Sprintf(`
+    <tr>
+      <td class="name">%s</td>
+      <td>%s</td>
+      <td>%s</td>
+      <td align="right" style="font-weight:600;color:#004b8f;">%s %.2f</td>
+    </tr>
+`, c.OrderNumber, placedBy, c.CreatedAt.Format("Jan 2, 2006 15:04"), c.Currency, c.TotalAmount))
+	}
+	sb.WriteString(`  </tbody></table>`)
 
 	sb.WriteString(`</div>`) // close .body
 	sb.WriteString(`
 <div class="footer">
-  &copy; Zentora. All rights reserved. This is an automated reminder about your pending order.
+  Zentora Admin Notification &nbsp;·&nbsp; Do not share this email.
 </div>
 </div>`) // close .wrapper
 

@@ -23,10 +23,11 @@ type Repository interface {
 	UpdateOrderStatus(ctx context.Context, id int64, status order.OrderStatus) (*order.Order, error)
 	OrderStats(ctx context.Context) (*order.OrderStatsResponse, error)
 
-	// ListPendingOrdersNeedingReminder returns registered-user orders still
-	// pending after olderThan that haven't had a reminder sent yet.
-	ListPendingOrdersNeedingReminder(ctx context.Context, olderThan time.Duration) ([]order.PendingReminderCandidate, error)
-	// MarkReminderSent records that a pending-order reminder was emailed, so
-	// the next worker tick does not notify the customer again for it.
+	// ListPendingOrdersNeedingReminder returns orders still pending after
+	// olderThan that either never had an admin reminder sent, or whose last
+	// reminder is older than renotifyAfter.
+	ListPendingOrdersNeedingReminder(ctx context.Context, olderThan, renotifyAfter time.Duration) ([]order.PendingReminderCandidate, error)
+	// MarkReminderSent records that an admin reminder was emailed, so the
+	// order isn't re-notified again until the renotify cooldown elapses.
 	MarkReminderSent(ctx context.Context, orderID int64) error
 }

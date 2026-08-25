@@ -36,10 +36,10 @@ func main() {
 		cfg.SMTPHost, cfg.SMTPPort, cfg.SMTPUser, cfg.SMTPPass,
 		cfg.SMTPFromName, cfg.BaseURL, cfg.LogoURL, cfg.SMTPSecure,
 	)
-	orderMailer := email.NewOrderEmailSender(emailSender, cfg.AdminEmail, cfg.StoreBaseURL)
+	orderMailer := email.NewOrderEmailSender(emailSender, cfg.AdminEmail)
 	orderRepo := postgres.NewOrderRepository(pool)
 	reminderJob := workerservice.NewOrderReminderJobService(
-		orderRepo, orderMailer, cfg.OrderReminderPendingAfter, cfg.WorkerOrderReminderInterval, log.Default(),
+		orderRepo, orderMailer, cfg.OrderReminderPendingAfter, cfg.OrderReminderRenotifyAfter, cfg.WorkerOrderReminderInterval, log.Default(),
 	)
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)

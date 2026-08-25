@@ -18,7 +18,8 @@ type AppConfig struct {
 
 	// Order reminders
 	WorkerOrderReminderInterval time.Duration
-	OrderReminderPendingAfter  time.Duration
+	OrderReminderPendingAfter   time.Duration
+	OrderReminderRenotifyAfter  time.Duration
 
 	// Notifications
 	AdminEmail string
@@ -54,7 +55,9 @@ func Load() AppConfig {
 		WorkerMetricsInterval: getEnvDuration("WORKER_METRICS_INTERVAL", 15*time.Minute),
 
 		WorkerOrderReminderInterval: getEnvDuration("WORKER_ORDER_REMINDER_INTERVAL", 30*time.Minute),
-		OrderReminderPendingAfter:  getEnvDuration("ORDER_REMINDER_PENDING_AFTER", 24*time.Hour),
+		OrderReminderPendingAfter:   getEnvDuration("ORDER_REMINDER_PENDING_AFTER", 24*time.Hour),
+		// How long to wait before re-notifying the admin about a still-pending order.
+		OrderReminderRenotifyAfter: getEnvDuration("ORDER_REMINDER_RENOTIFY_AFTER", 24*time.Hour),
 
 		// Falls back to the address the platform owner has used historically so
 		// existing deployments keep working; override with ADMIN_EMAIL per environment.
