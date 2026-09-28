@@ -46,11 +46,13 @@ type HydrationService interface {
 
 // HydrationConfig carries runtime configuration for feed hydration.
 type HydrationConfig struct {
-	StoreBaseURL      string // "https://zentorashop.co.ke"
-	DefaultCurrency   string // "KES"
-	DefaultCondition  Condition
-	DefaultCountry    string // "KE" — for shipping annotations
-	DefaultShippingFee Money
-	DefaultTaxRate     float64 // e.g. 0.16
+	// Informational delivery is not a fixed rate suitable for a product feed.
+	OmitShippingRate         bool
+	StoreBaseURL             string // "https://zentorashop.co.ke"
+	DefaultCurrency          string // "KES"
+	DefaultCondition         Condition
+	DefaultCountry           string // "KE" — for shipping annotations
+	DefaultShippingFee       Money
+	DefaultTaxRate           float64          // e.g. 0.16
 	GoogleProductCategoryMap map[int64]string // category_id → GMC taxonomy path
 }

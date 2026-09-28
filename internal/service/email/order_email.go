@@ -2,6 +2,7 @@ package email
 
 import (
 	"fmt"
+	"html"
 	"strings"
 
 	"zentora-service/internal/domain/order"
@@ -452,6 +453,10 @@ func buildAdminItemsTableAndCards(ord *order.Order) string {
 }
 
 func buildTotals(ord *order.Order) string {
+	totalLabel := "Total"
+	if ord.DeliveryInformation != nil && !ord.DeliveryInformation.IncludedInOrderTotal {
+		totalLabel = "Order total (excluding delivery)"
+	}
 	var sb strings.Builder
 	sb.WriteString(`<table class="totals" style="margin-top:16px;">`)
 	sb.WriteString(fmt.Sprintf(`
@@ -470,10 +475,13 @@ func buildTotals(ord *order.Order) string {
 
 	sb.WriteString(fmt.Sprintf(`
   <tr class="grand">
-    <td class="lbl">Total</td>
+    <td class="lbl">%s</td>
     <td class="amt">%s %.2f</td>
   </tr>
-</table>`, ord.Currency, ord.TotalAmount))
+</table>`, totalLabel, ord.Currency, ord.TotalAmount))
+	if ord.DeliveryInformation != nil {
+		sb.WriteString("<p>" + html.EscapeString(ord.DeliveryInformation.Notice) + "</p>")
+	}
 	return sb.String()
 }
 

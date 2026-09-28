@@ -45,10 +45,10 @@ func (r *OrderRepository) createTx(ctx context.Context, tx pgx.Tx, o *order.Orde
 		INSERT INTO orders (
 			user_id, cart_id, order_number, status, subtotal, discount_amount, tax_amount, shipping_fee, total_amount, currency, shipping_method_id,
 			shipping_full_name, shipping_phone, shipping_country, shipping_county, shipping_city, shipping_area, shipping_postal_code,
-			shipping_address_line_1, shipping_address_line_2
+			shipping_address_line_1, shipping_address_line_2, delivery_information
 		) VALUES (
 			$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,
-			$12,$13,$14,$15,$16,$17,$18,$19,$20
+			$12,$13,$14,$15,$16,$17,$18,$19,$20,$21
 		)
 		RETURNING id, created_at, updated_at
 	`
@@ -57,7 +57,7 @@ func (r *OrderRepository) createTx(ctx context.Context, tx pgx.Tx, o *order.Orde
 		o.UserID, o.CartID, o.OrderNumber, o.Status,
 		o.Subtotal, o.DiscountAmount, o.TaxAmount, o.ShippingFee, o.TotalAmount, o.Currency, o.ShippingMethodID,
 		o.Shipping.FullName, o.Shipping.Phone, o.Shipping.Country, o.Shipping.County, o.Shipping.City, o.Shipping.Area, o.Shipping.PostalCode,
-		o.Shipping.AddressLine1, o.Shipping.AddressLine2,
+		o.Shipping.AddressLine1, o.Shipping.AddressLine2, o.DeliveryInformation,
 	).Scan(&o.ID, &o.CreatedAt, &o.UpdatedAt); err != nil {
 		return fmt.Errorf("insert order: %w", err)
 	}
@@ -98,7 +98,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id int64) (*order.Or
 			id, user_id, cart_id, order_number, status,
 			subtotal, discount_amount, tax_amount, shipping_fee, total_amount, currency, shipping_method_id,
 			shipping_full_name, shipping_phone, shipping_country, shipping_county, shipping_city, shipping_area, shipping_postal_code,
-			shipping_address_line_1, shipping_address_line_2,
+			shipping_address_line_1, shipping_address_line_2, delivery_information,
 			created_at, updated_at
 		FROM orders
 		WHERE id = $1
@@ -109,7 +109,7 @@ func (r *OrderRepository) GetOrderByID(ctx context.Context, id int64) (*order.Or
 		&o.ID, &o.UserID, &o.CartID, &o.OrderNumber, &o.Status,
 		&o.Subtotal, &o.DiscountAmount, &o.TaxAmount, &o.ShippingFee, &o.TotalAmount, &o.Currency, &o.ShippingMethodID,
 		&o.Shipping.FullName, &o.Shipping.Phone, &o.Shipping.Country, &o.Shipping.County, &o.Shipping.City, &o.Shipping.Area, &o.Shipping.PostalCode,
-		&o.Shipping.AddressLine1, &o.Shipping.AddressLine2,
+		&o.Shipping.AddressLine1, &o.Shipping.AddressLine2, &o.DeliveryInformation,
 		&o.CreatedAt, &o.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -201,7 +201,7 @@ func (r *OrderRepository) ListOrders(ctx context.Context, f order.ListFilter) ([
 			id, user_id, cart_id, order_number, status,
 			subtotal, discount_amount, tax_amount, shipping_fee, total_amount, currency, shipping_method_id,
 			shipping_full_name, shipping_phone, shipping_country, shipping_county, shipping_city, shipping_area, shipping_postal_code,
-			shipping_address_line_1, shipping_address_line_2,
+			shipping_address_line_1, shipping_address_line_2, delivery_information,
 			created_at, updated_at
 		FROM orders
 		%s
@@ -222,7 +222,7 @@ func (r *OrderRepository) ListOrders(ctx context.Context, f order.ListFilter) ([
 			&o.ID, &o.UserID, &o.CartID, &o.OrderNumber, &o.Status,
 			&o.Subtotal, &o.DiscountAmount, &o.TaxAmount, &o.ShippingFee, &o.TotalAmount, &o.Currency, &o.ShippingMethodID,
 			&o.Shipping.FullName, &o.Shipping.Phone, &o.Shipping.Country, &o.Shipping.County, &o.Shipping.City, &o.Shipping.Area, &o.Shipping.PostalCode,
-			&o.Shipping.AddressLine1, &o.Shipping.AddressLine2,
+			&o.Shipping.AddressLine1, &o.Shipping.AddressLine2, &o.DeliveryInformation,
 			&o.CreatedAt, &o.UpdatedAt,
 		); err != nil {
 			return nil, 0, fmt.Errorf("scan order: %w", err)
@@ -290,7 +290,7 @@ func (r *OrderRepository) GetOrderByNumber(ctx context.Context, orderNumber stri
 			id, user_id, cart_id, order_number, status,
 			subtotal, discount_amount, tax_amount, shipping_fee, total_amount, currency, shipping_method_id,
 			shipping_full_name, shipping_phone, shipping_country, shipping_county, shipping_city, shipping_area, shipping_postal_code,
-			shipping_address_line_1, shipping_address_line_2,
+			shipping_address_line_1, shipping_address_line_2, delivery_information,
 			created_at, updated_at
 		FROM orders
 		WHERE order_number = $1
@@ -301,7 +301,7 @@ func (r *OrderRepository) GetOrderByNumber(ctx context.Context, orderNumber stri
 		&o.ID, &o.UserID, &o.CartID, &o.OrderNumber, &o.Status,
 		&o.Subtotal, &o.DiscountAmount, &o.TaxAmount, &o.ShippingFee, &o.TotalAmount, &o.Currency, &o.ShippingMethodID,
 		&o.Shipping.FullName, &o.Shipping.Phone, &o.Shipping.Country, &o.Shipping.County, &o.Shipping.City, &o.Shipping.Area, &o.Shipping.PostalCode,
-		&o.Shipping.AddressLine1, &o.Shipping.AddressLine2,
+		&o.Shipping.AddressLine1, &o.Shipping.AddressLine2, &o.DeliveryInformation,
 		&o.CreatedAt, &o.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -336,7 +336,7 @@ func (r *OrderRepository) UpdateOrderStatus(ctx context.Context, id int64, statu
 			id, user_id, cart_id, order_number, status,
 			subtotal, discount_amount, tax_amount, shipping_fee, total_amount, currency, shipping_method_id,
 			shipping_full_name, shipping_phone, shipping_country, shipping_county, shipping_city, shipping_area, shipping_postal_code,
-			shipping_address_line_1, shipping_address_line_2,
+			shipping_address_line_1, shipping_address_line_2, delivery_information,
 			created_at, updated_at
 	`
 
@@ -345,7 +345,7 @@ func (r *OrderRepository) UpdateOrderStatus(ctx context.Context, id int64, statu
 		&o.ID, &o.UserID, &o.CartID, &o.OrderNumber, &o.Status,
 		&o.Subtotal, &o.DiscountAmount, &o.TaxAmount, &o.ShippingFee, &o.TotalAmount, &o.Currency, &o.ShippingMethodID,
 		&o.Shipping.FullName, &o.Shipping.Phone, &o.Shipping.Country, &o.Shipping.County, &o.Shipping.City, &o.Shipping.Area, &o.Shipping.PostalCode,
-		&o.Shipping.AddressLine1, &o.Shipping.AddressLine2,
+		&o.Shipping.AddressLine1, &o.Shipping.AddressLine2, &o.DeliveryInformation,
 		&o.CreatedAt, &o.UpdatedAt,
 	); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

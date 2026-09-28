@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	deliveryHandler "zentora-service/internal/handlers/delivery"
 
 	"zentora-service/internal/config"
 	"zentora-service/internal/db"
@@ -39,8 +40,8 @@ import (
 	wsHandlers "zentora-service/internal/websocket/handler"
 
 	wishlistHandler "zentora-service/internal/handlers/wishlist"
-	merchantsvc "zentora-service/internal/merchant/service"
 	merchantH "zentora-service/internal/merchant/handler"
+	merchantsvc "zentora-service/internal/merchant/service"
 	sitemapH "zentora-service/internal/sitemap"
 
 	"github.com/gin-gonic/gin"
@@ -50,12 +51,12 @@ import (
 )
 
 type Server struct {
-	cfg         config.AppConfig
-	engine      *gin.Engine
-	logger      *zap.Logger
-	authService *authUsecase.AuthService
+	cfg             config.AppConfig
+	engine          *gin.Engine
+	logger          *zap.Logger
+	authService     *authUsecase.AuthService
 	merchantService *merchantsvc.MerchantFeedService
-	sitemapHandler *sitemapH.Handler
+	sitemapHandler  *sitemapH.Handler
 }
 
 func NewServer() *Server {
@@ -200,6 +201,7 @@ func (s *Server) Start() error {
 	orderMailer := email.NewOrderEmailSender(emailSender, s.cfg.AdminEmail)
 	cartService := cartsvc.NewService(cartRepo, redisClient)
 	wishlistService := wishlistsvc.NewService(wishlistRepo, redisClient)
+	deliveryRepo := postgres.NewDeliveryRepository(pool)
 	orderService := orderusecase.NewService(
 		pool,
 		orderRepo,
@@ -212,6 +214,8 @@ func (s *Server) Start() error {
 		orderMailer,
 		s.logger,
 	)
+
+	orderService.SetDeliveryReader(deliveryRepo)
 
 	merchantLogger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -237,7 +241,7 @@ func (s *Server) Start() error {
 	cartHandlerInst := cartHandler.NewHandler(cartService)
 	wishListHandlerInst := wishlistHandler.NewHandler(wishlistService)
 	orderHandlerInst := orderHandler.NewHandler(orderService)
-	merchantHandlerInst  := merchantH.NewHandler(merchantService, s.logger) 
+	merchantHandlerInst := merchantH.NewHandler(merchantService, s.logger)
 
 	authMiddleware := middleware.NewAuthMiddleware(authService)
 
@@ -248,6 +252,7 @@ func (s *Server) Start() error {
 	)
 
 	handlers := &Handlers{
+		DeliveryHandler:  deliveryHandler.NewHandler(deliveryRepo, s.logger),
 		AuthHandler:      authHandlerInst,
 		NotifHandler:     notifHandler,
 		WSHandler:        wsHandlerInst,

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"time"
+	"zentora-service/internal/domain/delivery"
 
 	"zentora-service/internal/domain/cart"
 	"zentora-service/internal/domain/discount"
@@ -13,8 +14,8 @@ import (
 	"zentora-service/internal/domain/product"
 	"zentora-service/internal/domain/user"
 	"zentora-service/internal/domain/variant"
-	"zentora-service/internal/repository/postgres"
 	orderrepo "zentora-service/internal/repository/order"
+	"zentora-service/internal/repository/postgres"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -60,7 +61,12 @@ type OrderMailer interface {
 	SendAdminOrderNotification(ord *order.Order) error
 }
 
+type DeliveryReader interface {
+	Get(context.Context) (*delivery.Policy, error)
+}
+
 type Service struct {
+	delivery  DeliveryReader
 	db        *pgxpool.Pool
 	orders    orderrepo.Repository
 	carts     CartRepo
@@ -100,6 +106,22 @@ func NewService(
 		mailer:    mailer,
 		logger:    logger,
 	}
+}
+
+func (s *Service) SetDeliveryReader(reader DeliveryReader) { s.delivery = reader }
+
+func (s *Service) deliverySnapshot(ctx context.Context) *delivery.Snapshot {
+	if s.delivery == nil {
+		return delivery.NewSnapshot(nil)
+	}
+	readCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	p, err := s.delivery.Get(readCtx)
+	if err != nil {
+		s.logger.Warn("delivery policy unavailable; saving generic notice", zap.Error(err))
+		return delivery.NewSnapshot(nil)
+	}
+	return delivery.NewSnapshot(p)
 }
 
 func genOrderNumber() string {
@@ -269,6 +291,8 @@ func (s *Service) createOrderFromItems(
 	items []order.CreateItem,
 	shipping order.ShippingInfo,
 ) (*order.Order, error) {
+	// Read before opening the order transaction so a policy error cannot abort it.
+	snapshot := s.deliverySnapshot(ctx)
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin tx: %w", err)
@@ -278,15 +302,16 @@ func (s *Service) createOrderFromItems(
 	now := time.Now().UTC()
 
 	o := &order.Order{
-		UserID:      userID,
-		CartID:      cartID,
-		OrderNumber: genOrderNumber(),
-		Status:      order.OrderStatusPending,
-		Currency:    "KES",
-		Shipping:    shipping,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-		Items:       make([]order.OrderItem, 0, len(items)),
+		DeliveryInformation: snapshot,
+		UserID:              userID,
+		CartID:              cartID,
+		OrderNumber:         genOrderNumber(),
+		Status:              order.OrderStatusPending,
+		Currency:            "KES",
+		Shipping:            shipping,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+		Items:               make([]order.OrderItem, 0, len(items)),
 	}
 
 	// Reserve/adjust inventory + compute pricing per item.

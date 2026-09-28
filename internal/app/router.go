@@ -4,6 +4,7 @@ import (
 	authHandler "zentora-service/internal/handlers/auth"
 	cartHandler "zentora-service/internal/handlers/cart"
 	catalogHandler "zentora-service/internal/handlers/catalog"
+	deliveryHandler "zentora-service/internal/handlers/delivery"
 	discoveryHandler "zentora-service/internal/handlers/discovery"
 	notifyHandler "zentora-service/internal/handlers/notification"
 	orderHandler "zentora-service/internal/handlers/order"
@@ -20,6 +21,7 @@ import (
 )
 
 type Handlers struct {
+	DeliveryHandler  *deliveryHandler.Handler
 	AuthHandler      *authHandler.AuthHandler
 	NotifHandler     *notifyHandler.NotificationHandler
 	WSHandler        *wsHandler.WebSocketHandler
@@ -32,8 +34,7 @@ type Handlers struct {
 	ReviewHandler    *reviewHandler.Handler
 	AuthMiddleware   *middleware.AuthMiddleware
 	MerchantHandler  *merchantH.Handler
-	SitemapHandler *sitemapH.Handler
-
+	SitemapHandler   *sitemapH.Handler
 }
 
 func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
@@ -46,6 +47,11 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 	h.SitemapHandler.RegisterRoutes(r)
 
 	api := r.Group("/api/v1")
+	api.GET("/delivery-policy", h.DeliveryHandler.Get)
+	deliveryAdmin := api.Group("/admin/delivery-policy")
+	deliveryAdmin.Use(h.AuthMiddleware.AdminOnly()...)
+	deliveryAdmin.GET("", h.DeliveryHandler.Get)
+	deliveryAdmin.PUT("", h.DeliveryHandler.Update)
 
 	r.GET("/ws", h.WSHandler.HandleConnection)
 
@@ -90,7 +96,7 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 		notifications.DELETE("/:id", h.NotifHandler.DeleteNotification)
 	}
 
-		// ── Admin — auth/users management ─────────────────────────────────────────
+	// ── Admin — auth/users management ─────────────────────────────────────────
 	adminAuth := api.Group("/admin/auth")
 	adminAuth.Use(h.AuthMiddleware.AdminOnly()...)
 	{
@@ -114,12 +120,12 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 	{
 		ordersPublic.POST("/guest", h.OrderHandler.CreateGuestOrder) // guest checkout
 	}
-	
+
 	ordersProtected := api.Group("/orders")
 	ordersProtected.Use(h.AuthMiddleware.Auth())
 	{
-		ordersProtected.POST("", h.OrderHandler.CreateUserOrder) // logged-in checkout (cart or direct)
-		ordersProtected.GET("", h.OrderHandler.ListOrders) // list user's orders with filters + pagination
+		ordersProtected.POST("", h.OrderHandler.CreateUserOrder)     // logged-in checkout (cart or direct)
+		ordersProtected.GET("", h.OrderHandler.ListOrders)           // list user's orders with filters + pagination
 		ordersProtected.GET("/details", h.OrderHandler.GetOrderByID) // order details by ID (with items)
 	}
 
@@ -145,7 +151,7 @@ func SetupRouter(r *gin.Engine, logger *zap.Logger, h *Handlers) {
 		userRoutes.PUT("/addresses/:id", h.UserHandler.UpdateAddress)
 		userRoutes.DELETE("/addresses/:id", h.UserHandler.DeleteAddress)
 		userRoutes.PUT("/addresses/:id/default", h.UserHandler.SetDefaultAddress)
-		
+
 		userRoutes.GET("/cart", h.CartHandler.GetMyCart)
 		userRoutes.POST("/cart/items", h.CartHandler.AddOrUpdateItem)
 		userRoutes.DELETE("/cart/items/:id", h.CartHandler.RemoveItem)

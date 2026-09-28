@@ -212,7 +212,7 @@ func partitionImages(images []merchant.MerchantImage) (primary string, additiona
 // ---------------------------------------------------------------------------
 
 func buildShipping(cfg merchant.HydrationConfig) []merchant.MerchantShipping {
-	if cfg.DefaultCountry == "" {
+	if cfg.OmitShippingRate || cfg.DefaultCountry == "" {
 		return nil
 	}
 	fee := cfg.DefaultShippingFee
@@ -221,9 +221,9 @@ func buildShipping(cfg merchant.HydrationConfig) []merchant.MerchantShipping {
 	}
 	return []merchant.MerchantShipping{
 		{
-			Country:      cfg.DefaultCountry,
-			Service:      "Standard Shipping",
-			PriceAmount:  fee,
+			Country:     cfg.DefaultCountry,
+			Service:     "Standard Shipping",
+			PriceAmount: fee,
 		},
 	}
 }

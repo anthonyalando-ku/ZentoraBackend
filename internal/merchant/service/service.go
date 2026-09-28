@@ -11,9 +11,9 @@ import (
 	"log/slog"
 	"time"
 
-	"zentora-service/internal/merchant/domain"
 	"zentora-service/internal/merchant/application/feedgen"
 	"zentora-service/internal/merchant/application/hydration"
+	"zentora-service/internal/merchant/domain"
 
 	merchantrepo "zentora-service/internal/merchant/infrastructure/postgres"
 
@@ -24,21 +24,21 @@ import (
 // Wire it into app.Server and call GenerateFull / GenerateIncremental
 // from a scheduler or an admin HTTP handler.
 type MerchantFeedService struct {
-	generator  *feedgen.Generator
-	repo       merchant.Repository
-	cfg        merchant.HydrationConfig
-	logger     *slog.Logger
+	generator *feedgen.Generator
+	repo      merchant.Repository
+	cfg       merchant.HydrationConfig
+	logger    *slog.Logger
 }
 
 // Config holds all runtime knobs for the merchant feed.
 type Config struct {
-	StoreBaseURL      string  // "https://zentora.com" — no trailing slash
-	StoreTitle        string  // shown in the feed <channel><title>
-	DefaultCurrency   string  // "KES"
-	DefaultCountry    string  // ISO 3166-1 alpha-2, e.g. "KE"
-	ShippingFeeKES    float64 // flat shipping fee in KES (e.g. 200)
-	TaxRate           float64 // decimal, e.g. 0.16 for Kenyan VAT
-	BatchSize         int     // variants per SQL batch, e.g. 500
+	StoreBaseURL    string  // "https://zentora.com" — no trailing slash
+	StoreTitle      string  // shown in the feed <channel><title>
+	DefaultCurrency string  // "KES"
+	DefaultCountry  string  // ISO 3166-1 alpha-2, e.g. "KE"
+	ShippingFeeKES  float64 // flat shipping fee in KES (e.g. 200)
+	TaxRate         float64 // decimal, e.g. 0.16 for Kenyan VAT
+	BatchSize       int     // variants per SQL batch, e.g. 500
 }
 
 // DefaultConfig returns sensible Zentora production defaults.
@@ -61,12 +61,14 @@ func New(pool *pgxpool.Pool, cfg Config, logger *slog.Logger) *MerchantFeedServi
 	hydra := hydration.New()
 
 	hydrationCfg := merchant.HydrationConfig{
-		StoreBaseURL:    cfg.StoreBaseURL,
-		DefaultCurrency: cfg.DefaultCurrency,
-		DefaultCondition: merchant.ConditionNew,
-		DefaultCountry:  cfg.DefaultCountry,
-		DefaultShippingFee: merchant.MoneyFromDecimal(cfg.ShippingFeeKES, cfg.DefaultCurrency),
-		DefaultTaxRate:  cfg.TaxRate,
+		// Delivery is confirmed separately; do not advertise an invented flat rate.
+		OmitShippingRate:         true,
+		StoreBaseURL:             cfg.StoreBaseURL,
+		DefaultCurrency:          cfg.DefaultCurrency,
+		DefaultCondition:         merchant.ConditionNew,
+		DefaultCountry:           cfg.DefaultCountry,
+		DefaultShippingFee:       merchant.MoneyFromDecimal(cfg.ShippingFeeKES, cfg.DefaultCurrency),
+		DefaultTaxRate:           cfg.TaxRate,
 		GoogleProductCategoryMap: ZentoraCategoryMap(),
 	}
 
