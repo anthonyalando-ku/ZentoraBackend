@@ -599,7 +599,7 @@ func (r *DiscoveryRepository) getSearchCandidates(ctx context.Context, req *disc
 
 func (r *DiscoveryRepository) runFilteredCandidateQuery(ctx context.Context, req *discovery.FeedRequest, candidate candidateQuery, operation string) ([]discovery.Candidate, error) {
 	filterCTE := buildEligibleProductsCTE(len(candidate.args) + 1)
-	filterArgs := buildEligibleProductsArgs(req.Filters)
+	filterArgs := buildEligibleProductsArgs(req.Filters, eligibleCategoryID(req))
 	selectedColumns := []string{"ranked.product_id"}
 	for _, signal := range candidate.signals {
 		selectedColumns = append(selectedColumns, "ranked."+signal)
@@ -624,7 +624,7 @@ func (r *DiscoveryRepository) runFilteredCandidateQuery(ctx context.Context, req
 	)
 
 	args := append([]any{}, candidate.args...)
-	args = append(args, buildEligibleProductsArgs(req.Filters)...)
+	args = append(args, filterArgs...)
 	args = append(args, req.Limit)
 
 	rows, err := r.db.Query(ctx, query, args...)
@@ -636,7 +636,17 @@ func (r *DiscoveryRepository) runFilteredCandidateQuery(ctx context.Context, req
 	return scanCandidatesWithSignals(rows, candidate.signals...)
 }
 
-func buildEligibleProductsArgs(filters discovery.FeedFilter) []any {
+// eligibleCategoryID narrows ranked feeds (trending, best sellers, ...) to one
+// category, matching the catalogue's exact category filter. The category feed
+// already selects its category and descendants, so it is left unchanged.
+func eligibleCategoryID(req *discovery.FeedRequest) *int64 {
+	if req.FeedType == discovery.FeedCategory {
+		return nil
+	}
+	return req.CategoryID
+}
+
+func buildEligibleProductsArgs(filters discovery.FeedFilter, categoryID *int64) []any {
 	return []any{
 		filters.BrandIDs,
 		filters.TagIDs,
@@ -646,6 +656,7 @@ func buildEligibleProductsArgs(filters discovery.FeedFilter) []any {
 		filters.DiscountOnly,
 		filters.InStockOnly,
 		filters.VariantAttributeValueIDs,
+		categoryID,
 	}
 }
 
@@ -785,6 +796,7 @@ func buildEligibleProductsCTE(startArg int) string {
 	discountOnlyArg := startArg + 5
 	inStockOnlyArg := startArg + 6
 	variantAttributeArg := startArg + 7
+	categoryArg := startArg + 8
 
 	effectivePriceExpr := "ROUND((p.base_price * (1 - (COALESCE(bd.discount_percent, 0) / 100.0)))::NUMERIC, 2)::DOUBLE PRECISION"
 
@@ -880,6 +892,12 @@ func buildEligibleProductsCTE(startArg int) string {
 			  	GROUP BY pv.id
 			  	HAVING COUNT(DISTINCT vav.attribute_value_id) = cardinality($%d::BIGINT[])
 			  ))
+			  AND ($%d::BIGINT IS NULL OR EXISTS (
+			  	SELECT 1
+			  	FROM product_category_map pcm
+			  	WHERE pcm.product_id = p.id
+			  	  AND pcm.category_id = $%d::BIGINT
+			  ))
 		)`,
 		product.StatusActive,
 		product.StatusActive,
@@ -893,6 +911,7 @@ func buildEligibleProductsCTE(startArg int) string {
 		minRatingArg, minRatingArg,
 		discountOnlyArg,
 		variantAttributeArg, variantAttributeArg, variantAttributeArg,
+		categoryArg, categoryArg,
 	)
 
 	return sql

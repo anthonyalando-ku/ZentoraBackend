@@ -42,9 +42,9 @@ func TestBuildEligibleProductsCTEIncludesSharedFilterClauses(t *testing.T) {
 func TestBuildEligibleProductsArgsIncludesVariantAttributeIDs(t *testing.T) {
 	args := buildEligibleProductsArgs(discoverydomain.FeedFilter{
 		VariantAttributeValueIDs: []int64{13, 21},
-	})
-	if len(args) != 8 {
-		t.Fatalf("args len = %d, want 8", len(args))
+	}, nil)
+	if len(args) != 9 {
+		t.Fatalf("args len = %d, want 9", len(args))
 	}
 
 	ids, ok := args[7].([]int64)
@@ -53,6 +53,26 @@ func TestBuildEligibleProductsArgsIncludesVariantAttributeIDs(t *testing.T) {
 	}
 	if len(ids) != 2 || ids[0] != 13 || ids[1] != 21 {
 		t.Fatalf("variant attribute args = %#v, want [13 21]", ids)
+	}
+}
+
+func TestEligibleCategoryIDNarrowsRankedFeedsOnly(t *testing.T) {
+	categoryID := int64(7)
+
+	trending := &discoverydomain.FeedRequest{FeedType: discoverydomain.FeedTrending, CategoryID: &categoryID}
+	if got := eligibleCategoryID(trending); got == nil || *got != categoryID {
+		t.Fatalf("trending category = %v, want %d", got, categoryID)
+	}
+	args := buildEligibleProductsArgs(trending.Filters, eligibleCategoryID(trending))
+	if got, ok := args[8].(*int64); !ok || got == nil || *got != categoryID {
+		t.Fatalf("category arg = %#v, want %d", args[8], categoryID)
+	}
+
+	// The category feed already includes descendant categories; an exact
+	// eligibility match would wrongly drop products from child categories.
+	category := &discoverydomain.FeedRequest{FeedType: discoverydomain.FeedCategory, CategoryID: &categoryID}
+	if got := eligibleCategoryID(category); got != nil {
+		t.Fatalf("category feed eligibility category = %d, want nil", *got)
 	}
 }
 
