@@ -73,11 +73,12 @@ func (h *CatalogHandler) GetCategoryDescendants(c *gin.Context) {
 
 func (h *CatalogHandler) CreateCategory(c *gin.Context) {
 	var req categorydomain.CreateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	file, err := bindCategoryRequest(c, &req)
+	if err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid request body", err)
 		return
 	}
-	cat, err := h.svc.CreateCategory(c.Request.Context(), &req)
+	cat, err := createCategoryWithFile(h, c, &req, file)
 	if err != nil {
 		handleError(c, err)
 		return
@@ -91,11 +92,12 @@ func (h *CatalogHandler) UpdateCategory(c *gin.Context) {
 		return
 	}
 	var req categorydomain.UpdateRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	file, err := bindCategoryRequest(c, &req)
+	if err != nil {
 		response.Error(c, http.StatusBadRequest, "invalid request body", err)
 		return
 	}
-	cat, err := h.svc.UpdateCategory(c.Request.Context(), id, &req)
+	cat, err := updateCategoryWithFile(h, c, id, &req, file)
 	if err != nil {
 		handleError(c, err)
 		return

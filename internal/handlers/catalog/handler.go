@@ -24,7 +24,7 @@ import (
 
 // CatalogHandler holds HTTP handlers for the catalog domain.
 type CatalogHandler struct {
-	svc *catalogSvc.CatalogService
+	svc    *catalogSvc.CatalogService
 	logger *zap.Logger
 }
 
@@ -82,7 +82,11 @@ func handleError(c *gin.Context, err error) {
 		errors.Is(err, discdomain.ErrMinOrderAmount):
 		response.Error(c, http.StatusUnprocessableEntity, err.Error(), nil)
 
-	case errors.Is(err, categorydomain.ErrInvalidName),
+	case errors.Is(err, categorydomain.ErrImageUpload):
+		response.Error(c, http.StatusBadGateway, err.Error(), nil)
+
+	case errors.Is(err, categorydomain.ErrInvalidImage),
+		errors.Is(err, categorydomain.ErrInvalidName),
 		errors.Is(err, categorydomain.ErrInvalidParent),
 		errors.Is(err, branddomain.ErrInvalidName),
 		errors.Is(err, branddomain.ErrInvalidLogo),

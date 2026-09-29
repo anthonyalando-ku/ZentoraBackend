@@ -7,6 +7,7 @@ import (
 
 // Category represents a product category node.
 type Category struct {
+	ImageURL  *string       `json:"image_url"`
 	ID        int64         `json:"id"`
 	Name      string        `json:"name"`
 	Slug      string        `json:"slug"`

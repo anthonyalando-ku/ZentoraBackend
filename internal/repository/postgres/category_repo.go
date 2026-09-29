@@ -50,10 +50,10 @@ func (r *CategoryRepository) CreateCategory(ctx context.Context, tx pgx.Tx, c *c
 func (r *CategoryRepository) insertCategory(ctx context.Context, ex dbExecutor, c *category.Category) error {
 	c.Slug = GenerateSlug(c.Name)
 	const q = `
-		INSERT INTO product_categories (name, slug, parent_id, is_active)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO product_categories (name, slug, parent_id, is_active, image_url)
+		VALUES ($1, $2, $3, $4, $5)
 		RETURNING id, created_at`
-	err := ex.QueryRow(ctx, q, c.Name, c.Slug, c.ParentID, c.IsActive).
+	err := ex.QueryRow(ctx, q, c.Name, c.Slug, c.ParentID, c.IsActive, c.ImageURL).
 		Scan(&c.ID, &c.CreatedAt)
 	if err != nil {
 		return mapCategoryError(err)
@@ -63,14 +63,14 @@ func (r *CategoryRepository) insertCategory(ctx context.Context, ex dbExecutor, 
 
 func (r *CategoryRepository) GetCategoryByID(ctx context.Context, id int64) (*category.Category, error) {
 	const q = `
-		SELECT id, name, slug, parent_id, is_active, created_at
+		SELECT id, name, slug, parent_id, is_active, created_at, image_url
 		FROM product_categories WHERE id = $1`
 	return r.scanOne(ctx, q, id)
 }
 
 func (r *CategoryRepository) GetCategoryBySlug(ctx context.Context, slug string) (*category.Category, error) {
 	const q = `
-		SELECT id, name, slug, parent_id, is_active, created_at
+		SELECT id, name, slug, parent_id, is_active, created_at, image_url
 		FROM product_categories WHERE slug = $1`
 	return r.scanOne(ctx, q, slug)
 }
@@ -78,7 +78,7 @@ func (r *CategoryRepository) GetCategoryBySlug(ctx context.Context, slug string)
 func (r *CategoryRepository) scanOne(ctx context.Context, query string, arg any) (*category.Category, error) {
 	var c category.Category
 	err := r.db.QueryRow(ctx, query, arg).Scan(
-		&c.ID, &c.Name, &c.Slug, &c.ParentID, &c.IsActive, &c.CreatedAt,
+		&c.ID, &c.Name, &c.Slug, &c.ParentID, &c.IsActive, &c.CreatedAt, &c.ImageURL,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, category.ErrNotFound
@@ -92,9 +92,9 @@ func (r *CategoryRepository) scanOne(ctx context.Context, query string, arg any)
 func (r *CategoryRepository) UpdateCategory(ctx context.Context, c *category.Category) error {
 	const q = `
 		UPDATE product_categories
-		SET name = $1, slug = $2, parent_id = $3, is_active = $4
+		SET name = $1, slug = $2, parent_id = $3, is_active = $4, image_url = $6
 		WHERE id = $5`
-	result, err := r.db.Exec(ctx, q, c.Name, c.Slug, c.ParentID, c.IsActive, c.ID)
+	result, err := r.db.Exec(ctx, q, c.Name, c.Slug, c.ParentID, c.IsActive, c.ID, c.ImageURL)
 	if err != nil {
 		return mapCategoryError(err)
 	}
@@ -117,7 +117,7 @@ func (r *CategoryRepository) DeleteCategory(ctx context.Context, id int64) error
 
 func (r *CategoryRepository) ListCategories(ctx context.Context, f category.ListFilter) ([]category.Category, error) {
 	q := `
-		SELECT id, name, slug, parent_id, is_active, created_at
+		SELECT id, name, slug, parent_id, is_active, created_at, image_url
 		FROM product_categories
 		WHERE 1=1`
 
@@ -215,7 +215,7 @@ func (r *CategoryRepository) RemoveProductCategory(ctx context.Context, productI
 
 func (r *CategoryRepository) GetProductCategories(ctx context.Context, productID int64) ([]category.Category, error) {
 	const q = `
-		SELECT pc.id, pc.name, pc.slug, pc.parent_id, pc.is_active, pc.created_at
+		SELECT pc.id, pc.name, pc.slug, pc.parent_id, pc.is_active, pc.created_at, pc.image_url
 		FROM product_categories pc
 		JOIN product_category_map pcm ON pcm.category_id = pc.id
 		WHERE pcm.product_id = $1
@@ -269,7 +269,7 @@ func scanCategories(rows pgx.Rows) ([]category.Category, error) {
 	var out []category.Category
 	for rows.Next() {
 		var c category.Category
-		if err := rows.Scan(&c.ID, &c.Name, &c.Slug, &c.ParentID, &c.IsActive, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.ID, &c.Name, &c.Slug, &c.ParentID, &c.IsActive, &c.CreatedAt, &c.ImageURL); err != nil {
 			return nil, fmt.Errorf("scan category: %w", err)
 		}
 		out = append(out, c)

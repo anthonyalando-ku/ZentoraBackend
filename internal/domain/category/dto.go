@@ -10,9 +10,10 @@ import (
 // CreateRequest is the inbound payload for creating a category.
 // Slug is intentionally absent – it is derived from Name by the service layer.
 type CreateRequest struct {
-	Name     string `json:"name"`
-	ParentID *int64 `json:"parent_id,omitempty"`
-	IsActive *bool  `json:"is_active,omitempty"`
+	ImageURL *string `json:"image_url,omitempty"`
+	Name     string  `json:"name"`
+	ParentID *int64  `json:"parent_id,omitempty"`
+	IsActive *bool   `json:"is_active,omitempty"`
 }
 type SetProductCategoriesRequest struct {
 	CategoryIDs []int64 `json:"category_ids"`
@@ -29,6 +30,9 @@ func (r *SetProductCategoriesRequest) Validate() error {
 
 // Validate checks all business rules for a create request.
 func (r *CreateRequest) Validate() error {
+	if _, err := NormalizeImageURL(r.ImageURL); err != nil {
+		return err
+	}
 	r.Name = strings.TrimSpace(r.Name)
 	if r.Name == "" || utf8.RuneCountInString(r.Name) > 255 {
 		return ErrInvalidName
@@ -45,6 +49,8 @@ func (r *CreateRequest) Validate() error {
 // All fields are optional (pointer = nil means "don't change").
 // Slug regeneration is triggered automatically when Name changes.
 type UpdateRequest struct {
+	// Omitted/null preserves the image; empty string removes it.
+	ImageURL *string `json:"image_url,omitempty"`
 	Name     *string `json:"name,omitempty"`
 	ParentID *int64  `json:"parent_id,omitempty"` // 0 = clear parent
 	IsActive *bool   `json:"is_active,omitempty"`
@@ -52,6 +58,9 @@ type UpdateRequest struct {
 
 // Validate checks all business rules for an update request.
 func (r *UpdateRequest) Validate() error {
+	if _, err := NormalizeImageURL(r.ImageURL); err != nil {
+		return err
+	}
 	if r.Name != nil {
 		*r.Name = strings.TrimSpace(*r.Name)
 		if *r.Name == "" || utf8.RuneCountInString(*r.Name) > 255 {

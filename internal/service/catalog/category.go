@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"mime/multipart"
 
 	"zentora-service/internal/domain/category"
 	pgRepo "zentora-service/internal/repository/postgres"
@@ -18,6 +19,7 @@ import (
 func (s *CatalogService) CreateCategory(
 	ctx context.Context,
 	req *category.CreateRequest,
+	files ...*multipart.FileHeader,
 ) (*category.Category, error) {
 	// 1. Domain validation
 	if err := req.Validate(); err != nil {
@@ -31,9 +33,31 @@ func (s *CatalogService) CreateCategory(
 		}
 	}
 
+	imageURL, err := category.NormalizeImageURL(req.ImageURL)
+	if err != nil {
+		return nil, err
+	}
+	cleanup := func() {}
+	if len(files) > 0 {
+		if len(files) != 1 || imageURL != nil {
+			return nil, category.ErrInvalidImage
+		}
+		imageURL, cleanup, err = s.uploadCategoryImage(ctx, files[0])
+		if err != nil {
+			return nil, err
+		}
+	}
+	saved := false
+	defer func() {
+		if !saved {
+			cleanup()
+		}
+	}()
+
 	// 3. Build entity (slug auto-generated inside insertCategory, but we
 	//    derive the base slug here so we can retry on collision).
 	c := &category.Category{
+		ImageURL: imageURL,
 		Name:     req.Name,
 		IsActive: true,
 	}
@@ -50,6 +74,7 @@ func (s *CatalogService) CreateCategory(
 		return nil, err
 	}
 
+	saved = true
 	return c, nil
 }
 
@@ -154,6 +179,7 @@ func (s *CatalogService) UpdateCategory(
 	ctx context.Context,
 	id int64,
 	req *category.UpdateRequest,
+	files ...*multipart.FileHeader,
 ) (*category.Category, error) {
 	// 1. Validate request
 	if err := req.Validate(); err != nil {
@@ -205,6 +231,29 @@ func (s *CatalogService) UpdateCategory(
 		c.IsActive = *req.IsActive
 	}
 
+	cleanup := func() {}
+	if req.ImageURL != nil {
+		c.ImageURL, err = category.NormalizeImageURL(req.ImageURL)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(files) > 0 {
+		if len(files) != 1 || (req.ImageURL != nil && *req.ImageURL != "") {
+			return nil, category.ErrInvalidImage
+		}
+		c.ImageURL, cleanup, err = s.uploadCategoryImage(ctx, files[0])
+		if err != nil {
+			return nil, err
+		}
+	}
+	saved := false
+	defer func() {
+		if !saved {
+			cleanup()
+		}
+	}()
+
 	// 6. Persist — with slug collision retry when name changed
 	if nameChanged {
 		if err := s.updateCategoryWithSlugRetry(ctx, c); err != nil {
@@ -216,6 +265,7 @@ func (s *CatalogService) UpdateCategory(
 		}
 	}
 
+	saved = true
 	return c, nil
 }
 

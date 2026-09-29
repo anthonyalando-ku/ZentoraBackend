@@ -133,18 +133,30 @@ func compressToWebP(raw []byte) ([]byte, error) {
 }
 
 func uploadToImageKit(ik *imagekit.Client, filename string, data []byte) (string, bool) {
+	url, _, err := uploadImageKitFile(context.Background(), ik, filename, data)
+	return url, err == nil
+}
+
+// Shared ImageKit upload, including file ID for rollback of an uncommitted upload.
+func uploadImageKitFile(ctx context.Context, ik *imagekit.Client, filename string, data []byte) (string, string, error) {
 	resp, err := ik.Files.Upload(
-		context.Background(),
+		ctx,
 		imagekit.FileUploadParams{
 			File:     bytes.NewReader(data),
 			FileName: filename,
 			Folder:   imagekit.String(imagekitFolder),
 		},
 	)
-	if err != nil || resp.URL == "" {
-		return "", false
+	if err != nil {
+		return "", "", err
 	}
-	return resp.URL, true
+	if resp == nil {
+		return "", "", fmt.Errorf("empty ImageKit response")
+	}
+	if resp.URL == "" {
+		return "", resp.FileID, fmt.Errorf("ImageKit response missing URL")
+	}
+	return resp.URL, resp.FileID, nil
 }
 
 func saveLocally(filename string, data []byte) (string, error) {
